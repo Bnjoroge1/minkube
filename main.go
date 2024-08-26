@@ -2,115 +2,64 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strconv"
 	"time"
-
-	"minkube/manager"
-	"minkube/node"
-	"minkube/task"
-	"minkube/worker"
-
-	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
-	"github.com/docker/docker/client"
+	"minkube/worker"
+	"minkube/task"
+	"github.com/golang-collections/collections/queue"
+	
+
 )
 
+
 func main() {
-	t := task.Task {
-		ID: uuid.New(),
-		Name: "Task1",
-		State: task.Pending,
-		Image: "Image1",
-		Memory: 1024,
-		Disk: 1,
+	host := os.Getenv("MINKUBE_HOST")
+	if host == ""{
+		host = "0.0.0.0"
+		log.Fatalf("MINKUBE_HOST is not set")
 	}
-	te := task.TaskEvent {
-		ID: uuid.New(),
-		State: task.Pending,
-		Timestamp: time.Now(),
-		Task: t,
+	portStr := os.Getenv("MINKUBE_PORT")
+	if portStr == "" {
+		log.Fatal("MINKUBE_PORT environment variable is not set")
 	}
-	//print task and task event
-	fmt.Printf("Task: %v \n", t)
-	fmt.Printf("Task event: %v \n", te)
 
-	//create workers
-	w := worker.Worker {
-		Name: "worker1",
+	port, err := strconv.ParseInt(portStr, 10, 64)
+	if err != nil {
+		log.Fatalf("Invalid MINKUBE_PORT value: %v", err)
+	}
+
+	fmt.Printf("Starting Minkube worker on %s:%d\n", host, port)
+	w := worker.Worker{
 		Queue: *queue.New(),
-		TaskIds: make(map[uuid.UUID]*task.Task),
+		TaskIds:    make(map[uuid.UUID]*task.Task),
 	}
-	fmt.Println("worker: %v \n", w)
-	w.CollectStats()
-	w.StartTask(t)
-	//w.RunTask()
-	w.StopTask(t)
+	api := worker.Api{Address: host, Port: port, Worker: &w}
+	go runTasks(&w)
+	log.Printf("Starting API server on %s:%d\n", host, port)
+	api.Start()
+	
 
-	m := manager.Manager{
-		Pending: *queue.New(),
-		TaskDb: make(map[uuid.UUID]task.Task),
-		EventDb: make(map[string][]task.TaskEvent),
-		Workers: []string{w.Name},
-		WorkersTaskMap: make(map[string][]uuid.UUID),
-		TaskWorkerMap: make(map[uuid.UUID]string),
-	 }
-	fmt.Printf("manager: %v \n", m)
-	m.SelectWorker()
-	m.UpdateTasks()
-	m.SendWork()
-
-	n := node.Node {
-		Name: "Node1",
-		Ip: "192.168.1.1",
-		Cores: 4,
-		Memory: 1024,
-		Disk: 25,
-		Role: "worker",
-	}
-	fmt.Printf("node: %v \n", n)
-
-	fmt.Printf("Creating a test container \n")
-	dockerTask, createResult := createContainer()
-	if createResult.Error != nil {
-		fmt.Printf("%v", createResult.Error)
-		os.Exit(1)
-	}
-	fmt.Printf("Created container with ID: %s \n", createResult.ContainerId)
-	time.Sleep(time.Second * 5)
-	fmt.Printf("Stopping container %s \n", createResult.ContainerId)
-	_ = stopContainer(dockerTask)
 }
 
-func createContainer() ( *task.Docker, *task.DockerResult) {
-
-		c := task.Config {
-			Name: "test-container-{4}",
-			Image: "postgres:13",
-			Env:  []string{
-				"POSTGRES_USER=minkube",
-				"POSTGRES_PASSWORD=secret",
-			},
+func runTasks(w *worker.Worker) {
+	//another goroutine that loops over the queue and runs any existing tasks
+	for {
+		if w.Queue.Len() != 0 {
+			result, task := w.RunTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+			if task != nil {
+				log.Printf("Task %v is with state %v\n", task.ID, task.State)
+			}
+			
+	} else {
+			log.Printf("No tasks to process currently.\n")
 		}
-		dc, _ := client.NewClientWithOpts(client.FromEnv)
-		d := task.Docker {
-			Client: dc,
-			Config: c,
-		}
-		result := d.Run()
-		if result.Error != nil {
-			fmt.Println("%v \n", result.Error)
-			return nil, nil
-		}
-		fmt.Printf("Container %s is running with config %v \n", result.ContainerId)
-		return &d, &result
-}
-
-func stopContainer(d *task.Docker) *task.DockerResult {
-	result := d.Stop(d.ContainerId)
-	if result.Error != nil {
-		fmt.Printf("%v \n", result.Error)
-		return nil
+		log.Println("Sleeping for 10 seconds.")
+		time.Sleep(10 * time.Second)
 	}
-	fmt.Printf("Container %s has been stopped and removed \n", result.ContainerId)
-	return &result
 }

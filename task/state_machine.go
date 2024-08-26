@@ -30,6 +30,3 @@ func containsState(states []State, state State) bool {
 	return false
 }
 
-func validateStateTransition(src State, dst State) bool {
-	return containsState(stateTransitionMap[src], dst)
-}

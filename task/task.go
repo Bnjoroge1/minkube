@@ -174,6 +174,8 @@ type TaskEvent struct {
 	return DockerResult{Action: "stop", Result: "success", Error: nil}
 }
  
- 
+func ValidateStateTransition(src State, dst State) bool {
+	return containsState(stateTransitionMap[src], dst)
+}
 
  
