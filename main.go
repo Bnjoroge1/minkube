@@ -2,64 +2,64 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"strconv"
 	"time"
-
-	"minkube/node"
-	"minkube/worker"
-	"minkube/manager"
-	"minkube/task"
-
-	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
+	"minkube/worker"
+	"minkube/task"
+	"github.com/golang-collections/collections/queue"
+	
+
 )
 
+
 func main() {
-	t := task.Task {
-		ID: uuid.New(),
-		Name: "Task1",
-		State: task.Pending,
-		Image: "Image1",
-		Memory: 1024,
-		Disk: 1,
+	host := os.Getenv("MINKUBE_HOST")
+	if host == ""{
+		host = "0.0.0.0"
+		log.Fatalf("MINKUBE_HOST is not set")
 	}
-	te := task.TaskEvent {
-		ID: uuid.New(),
-		State: task.Pending,
-		Timestamp: time.Now(),
-		Task: t,
+	portStr := os.Getenv("MINKUBE_PORT")
+	if portStr == "" {
+		log.Fatal("MINKUBE_PORT environment variable is not set")
 	}
-	//print task and task event
-	fmt.Printf("Task: %v \n", t)
-	fmt.Printf("Task event: %v \n", te)
 
-	//create workers
-	w := worker.Worker {
+	port, err := strconv.ParseInt(portStr, 10, 64)
+	if err != nil {
+		log.Fatalf("Invalid MINKUBE_PORT value: %v", err)
+	}
+
+	fmt.Printf("Starting Minkube worker on %s:%d\n", host, port)
+	w := worker.Worker{
 		Queue: *queue.New(),
-		Db: make(map[uuid.UUID]task.Task),
+		TaskIds:    make(map[uuid.UUID]*task.Task),
 	}
-	fmt.Println("worker: %v \n", w)
-	w.CollectStats()
-	w.RunTask()
-	w.StopTask()
+	api := worker.Api{Address: host, Port: port, Worker: &w}
+	go runTasks(&w)
+	log.Printf("Starting API server on %s:%d\n", host, port)
+	api.Start()
+	
 
-	m := manager.Manager{
-		Pending: *queue.New(),
-		TaskDb: make(map[string][]task.Task),
-		EventDb: make(map[string][]task.TaskEvent),
-		Workers: []string{w.Name},
-	}
-	fmt.Printf("manager: %v \n", m)
-	m.SelectWorker()
-	m.UpdateTasks()
-	m.SendWork()
+}
 
-	n := node.Node {
-		Name: "Node1",
-		Ip: "192.168.1.1",
-		Cores: 4,
-		Memory: 1024,
-		Disk: 25,
-		Role: "worker",
+func runTasks(w *worker.Worker) {
+	//another goroutine that loops over the queue and runs any existing tasks
+	for {
+		if w.Queue.Len() != 0 {
+			result, task := w.RunTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+			if task != nil {
+				log.Printf("Task %v is with state %v\n", task.ID, task.State)
+			}
+			
+	} else {
+			log.Printf("No tasks to process currently.\n")
+		}
+		log.Println("Sleeping for 10 seconds.")
+		time.Sleep(10 * time.Second)
 	}
-	fmt.Printf("node: %v \n", n)
 }
