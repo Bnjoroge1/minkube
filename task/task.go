@@ -40,6 +40,7 @@ type Config struct {
 	AttachStdout bool
 	AttachStderr bool
 	Cmd []string
+	CPU float64
 	Image string
 	Memory int64   //used by scheduler to find a node in cluster capableof running task
  	Disk int64
