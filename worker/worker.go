@@ -6,7 +6,7 @@ import (
     "fmt"
     "time"
     "log"
-    "errors"
+    
     
 )
 type Worker struct  {
@@ -93,7 +93,7 @@ func (w *Worker) RunTask()  (task.DockerResult, *task.Task){
                 result.Error = fmt.Errorf("Unexpected task state: %v", taskQueued.State)
                 log.Printf("Unexpected task state for task %v: %v\n", taskQueued.ID, taskQueued.State)
             }
-            }
+            
         } else {
             err := fmt.Errorf("You cant transition. Invalid transition from %v to %v", taskPersisted.State, taskQueued.State)
             result.Error = err
