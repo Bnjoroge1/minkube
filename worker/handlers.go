@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -33,6 +34,12 @@ func(a *Api) StartTaskHandler(w http.ResponseWriter, r*http.Request) {
 	  	json.NewEncoder(w).Encode(e)
 	  	return
 	} 
+	te.Task.ID = uuid.New()
+	te.Task.ID = te.Task.ID //setting outer ID to match inner ID. 
+	now := time.Now().UTC()
+	te.Timestamp = now
+	te.Task.StartTime = now
+	te.Task.State = task.Pending
 	a.Worker.AddTask(te.Task)
 	log.Printf("added task: %v", te)
 	w.WriteHeader(201)  //specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
