@@ -16,14 +16,19 @@ import (
 
 
 func main() {
+	
+    
 	host := os.Getenv("MINKUBE_HOST")
 	if host == ""{
-		host = "0.0.0.0"
+		host = "localhost"
 		log.Fatalf("MINKUBE_HOST is not set")
 	}
 	portStr := os.Getenv("MINKUBE_PORT")
 	if portStr == "" {
+		portStr = "8080"
 		log.Fatal("MINKUBE_PORT environment variable is not set")
+	}else {
+		log.Printf("Using port %s", portStr)
 	}
 
 	port, err := strconv.ParseInt(portStr, 10, 64)

@@ -41,7 +41,7 @@ func (w *Worker) RunTask()  (task.DockerResult, *task.Task){
         }
         //cast to task.Task type
         taskQueued := t.(task.Task)
-        log.Printf("Task %v is in state %v\n", taskQueued.ID, taskQueued.State)
+        log.Printf("Task yet to run %v is in state %v\n", taskQueued.ID, taskQueued.State)
         // Check if the task is already in a terminal state
     if taskQueued.State == task.Completed || taskQueued.State == task.Failed {
         log.Printf("Task %s is already in terminal state %d. Skipping.", taskQueued.ID, taskQueued.State)
@@ -64,6 +64,8 @@ func (w *Worker) RunTask()  (task.DockerResult, *task.Task){
         if taskPersisted.State == task.Pending {
             taskPersisted.State = task.Scheduled
         }
+        log.Printf("Task %v is in state %v\n", taskQueued.ID, taskQueued.State)
+        
         if task.ValidateStateTransition(taskPersisted.State, taskQueued.State) {
             switch taskQueued.State {
                 
