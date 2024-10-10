@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"time"
+	"time" 
 	"github.com/google/uuid"
 	"minkube/worker"
 	"minkube/task"
@@ -60,6 +60,7 @@ func runTasks(w *worker.Worker) {
 			log.Printf("No tasks to process currently.\n")
 		}
 		log.Println("Sleeping for 10 seconds.")
+		log.Println("waiting for other task") //written by my girl. 
 		time.Sleep(10 * time.Second)
 	}
 }
