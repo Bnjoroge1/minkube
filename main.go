@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"strconv"
 	"time" 
 	"github.com/google/uuid"
@@ -42,9 +44,16 @@ func main() {
 		TaskIds:    make(map[uuid.UUID]*task.Task),
 	}
 	api := worker.Api{Address: host, Port: port, Worker: &w}
-	go runTasks(&w)
+	log.Printf("API: %v", api.Worker)
+	go runTasks(&w) //run tasks in a goroutine
+	go w.CollectStats() //collect stats in a goroutine
 	log.Printf("Starting API server on %s:%d\n", host, port)
-	api.Start()
+	go api.Start()  // Start API server in a goroutine
+
+	// Keep the main function running for linux specifically.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
 	
 
 }

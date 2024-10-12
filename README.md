@@ -8,6 +8,8 @@ Also, faster because the worker does not need to make a round trip to the manage
 
 TODO: build a distributed key value store for tasks. This will be shared between the manager and the worker. 
 
+For measing CPU utilization, initially used the Perfomance monitoring counters but unfortunately it was not available in my cloudvm. So switched to using the /proc/stat file. 
+
 ### Task
 
 

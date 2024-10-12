@@ -1,8 +1,9 @@
 module minkube
 
-go 1.16
+go 1.22
 
 require (
+	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/docker/docker v20.10.24+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/go-chi/chi/v5 v5.1.0

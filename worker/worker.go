@@ -14,12 +14,18 @@ type Worker struct  {
         Queue     queue.Queue
         TaskIds   map[uuid.UUID]*task.Task   //stores the task ids which can be referenced in the manager by the ID
         TaskCount int
+        Stats *Stats
 }
 func (w *Worker)  AddTask(t task.Task) {
     w.Queue.Enqueue(t)
 }
 func (w *Worker) CollectStats() {
-	fmt.Println("I will collect stats")
+	for  {
+        log.Println("Collecting stats")
+        w.Stats = GetStats()
+        w.TaskCount = w.Stats.TaskCount 
+        time.Sleep(15 * time.Second)
+    }
 }
 
 func (w *Worker) RunTask()  (task.DockerResult, *task.Task){
