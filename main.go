@@ -42,10 +42,12 @@ func main() {
 	w := worker.Worker{
 		Queue: *queue.New(),
 		TaskIds:    make(map[uuid.UUID]*task.Task),
+		Stats: &worker.Stats{},
 	}
 	api := worker.Api{Address: host, Port: port, Worker: &w}
 	log.Printf("API: %v", api.Worker)
 	go runTasks(&w) //run tasks in a goroutine
+	go w.MonitorTasks() //monitor tasks in a goroutine
 	go w.CollectStats() //collect stats in a goroutine
 	log.Printf("Starting API server on %s:%d\n", host, port)
 	go api.Start()  // Start API server in a goroutine

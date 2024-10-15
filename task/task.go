@@ -49,12 +49,16 @@ type Config struct {
 
 }
 func NewConfig(t *Task) *Config {
-	return &Config{
+	log.Printf("NewConfig: Creating config for task %v", t.ID)
+
+	config := &Config{
 		Name:          t.Name,
 		Image:         t.Image,
 		
 		RestartPolicy: t.RestartPolicy,
 	}
+	log.Printf("NewConfig: Created config for task %v", t.ID)
+	return config
 }
 //mapping task to docker container
 type Docker struct {
@@ -64,7 +68,13 @@ type Docker struct {
 }
 
 func NewDocker(c *Config) *Docker {
+	log.Printf("NewDocker: Creating Docker client")
 	dc, _ := client.NewClientWithOpts(client.FromEnv)
+	if dc == nil {
+		log.Printf("NewDocker: Failed to create Docker client")
+		return nil
+	}
+	log.Printf("NewDocker: Created Docker client")
 	return &Docker{
 		Client: dc,
 		Config: *c,
@@ -173,6 +183,21 @@ type TaskEvent struct {
 		}
 	}
 	return DockerResult{Action: "stop", Result: "success", Error: nil}
+}
+
+//helper to check if task is running
+func (d *Docker) IsRunning(containerID string) (bool, error) {
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		return false, err
+	}
+	defer cli.Close()
+	container, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return false, err
+	}
+	return container.State.Running, nil
 }
  
 func ValidateStateTransition(src State, dst State) bool {
