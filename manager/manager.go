@@ -16,6 +16,8 @@ type Manager struct {
 	Workers []string
 	WorkersTaskMap map[string][]uuid.UUID
 	TaskWorkerMap map[uuid.UUID]string
+	lastWorker int  //track last worker to send task to
+
 }
 
 //Get task from db 	
@@ -34,8 +36,16 @@ func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) {
 
 //schedule task to workers
 //given a task, evaluate all resources available in pool of workers to find suitable worker. 
-func (m* Manager) SelectWorker () {
-	fmt.Println("I wil select an appropriate worker to send tasks to")
+func (m *Manager) SelectWorker() string {
+	var newWorker int #1
+	if m.LastWorker+1 < len(m.Workers) { #2
+	newWorker = m.LastWorker + 1 #3
+	m.LastWorker++ #4
+	} else { #5
+	newWorker = 0 #6
+	m.LastWorker = 0 #7
+	}
+	return m.Workers[newWorker] #8
 }
 
 //updates the status of tasks
