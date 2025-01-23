@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"time"
 
+	"minkube/task"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"minkube/task"
 )
 
 // ErrResponse struct definition

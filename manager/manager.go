@@ -65,6 +65,7 @@ func (m *Manager) UpdateTasks() {
 func (m *Manager) SendWork() {
 	log.Printf("Sending tasks to workers")
 	if m.Pending.Len() > 0 {
+		//if there's taks that are still pending. 
 		//select worker to run task
 		w := m.SelectWorker()
 		e := m.Pending.Dequeue()
@@ -73,8 +74,8 @@ func (m *Manager) SendWork() {
 			fmt.Errorf("Task %s is not a task event isntance", e)
 		}
 		t := te.Task
-		log.Printf("Pulled %v off pending queue")
-		m.EventDb[te.ID] = &te
+		log.Printf("Pulled %v task off pending queue")
+		m.EventDb[te.ID] = &te  //matching task to event db
 		m.WorkersTaskMap[w] = append(m.WorkersTaskMap[w], t.ID)
 		m.TaskWorkerMap[t.ID] = w
 		t.State = task.Scheduled
@@ -100,6 +101,17 @@ func (m *Manager) SendWork() {
 			}
 			log.Printf("Response error (%d): %s", e.HTTPStatusCode)
 			return
-		}
+			}
+
+			t = task.Task{}
+			err = d.Decode(&t)
+			if err != nil {
+				log.Printf("Error decoding task: %v", err)
+				return
+			}
+			log.Printf("task %v, %v", t.ID, t.State)
+		
+     } else {
+				log.Printf("no pending tasks")
+			}
 	}
-}
