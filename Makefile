@@ -128,10 +128,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # Ensure build directory exists before building
-build: | $(BUILD_DIR)
-build-linux: | $(BUILD_DIR)
-build-windows: | $(BUILD_DIR)
-build-darwin: | $(BUILD_DIR)
+build build-linux build-windows build-darwin: | $(BUILD_DIR)
 
 # Help
 .PHONY: help
