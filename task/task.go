@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"time"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
@@ -14,57 +15,55 @@ import (
 	"github.com/google/uuid"
 )
 
-
-
 type Task struct {
-	ID uuid.UUID
-	ContainerID string 
-	Name string
-	State State
-	Image string //docker image
-	Memory int //docker container memory allocated
-	Disk int //disk is storage allocated
-	ExposedPortSet nat.PortSet //ports for networking
-	PortBindings map[string]string  //maps container ports to host ports
-	RestartPolicy string //how container should be restarted if it stops
-	StartTime  time.Time
-	EndTime time.Time
-	//Command []string
+	ID             uuid.UUID         `json:"id"`
+	ContainerID    string            `json:"containerID"`
+	Name           string            `json:"name"`
+	State          State             `json:"state"`
+	Image          string            `json:"image"`
+	Memory         int               `json:"memory"`
+	Disk           int               `json:"disk"`
+	ExposedPortSet nat.PortSet       `json:"exposedPortSet"`
+	PortBindings   map[string]string `json:"portBindings"`
+	RestartPolicy  string            `json:"restartPolicy"`
+	StartTime      time.Time         `json:"startTime"`
+	EndTime        time.Time         `json:"endTime"`
 }
 
-
-//docker container config 
+// docker container config
 type Config struct {
-	Name string
-	AttachStdin bool
-	AttachStdout bool
-	AttachStderr bool
-	Cmd []string
-	CPU float64
-	Image string
-	Memory int64   //used by scheduler to find a node in cluster capableof running task
- 	Disk int64
-	Env []string //pass envirobment variaobles to container
-	RestartPolicy string   	// RestartPolicy for the container if it dies unexpectedly(provides resilienc) ["", "always", "unless-stopped", "on-failure"]
+	Name          string
+	AttachStdin   bool
+	AttachStdout  bool
+	AttachStderr  bool
+	Cmd           []string
+	CPU           float64
+	Image         string
+	Memory        int64 //used by scheduler to find a node in cluster capableof running task
+	Disk          int64
+	Env           []string //pass envirobment variaobles to container
+	RestartPolicy string   // RestartPolicy for the container if it dies unexpectedly(provides resilienc) ["", "always", "unless-stopped", "on-failure"]
 
 }
+
 func NewConfig(t *Task) *Config {
 	log.Printf("NewConfig: Creating config for task %v", t.ID)
 
 	config := &Config{
-		Name:          t.Name,
-		Image:         t.Image,
-		
+		Name:  t.Name,
+		Image: t.Image,
+
 		RestartPolicy: t.RestartPolicy,
 	}
 	log.Printf("NewConfig: Created config for task %v", t.ID)
 	return config
 }
-//mapping task to docker container
+
+// mapping task to docker container
 type Docker struct {
-	    Client *client.Client
-	    Config  Config
-	    ContainerId string
+	Client      *client.Client
+	Config      Config
+	ContainerId string
 }
 
 func NewDocker(c *Config) *Docker {
@@ -80,28 +79,30 @@ func NewDocker(c *Config) *Docker {
 		Config: *c,
 	}
 }
- //result of Docker operation
- type DockerResult struct {
+
+// result of Docker operation
+type DockerResult struct {
 	Error       error
-	Action      string  //start, create etc
+	Action      string //start, create etc
 	ContainerId string
 	Result      string
 }
-//TaskEvent is a struct to represent the user's desire to change the status from one to the other.
-type TaskEvent struct {
-	ID      uuid.UUID
-	State State
-	Timestamp time.Time
-	Task Task
- }
 
- //run container
- func( d *Docker) Run() DockerResult {
+// TaskEvent is a struct to represent the user's desire to change the status from one to the other.
+type TaskEvent struct {
+	ID        uuid.UUID
+	State     State
+	Timestamp time.Time
+	Task      Task
+}
+
+// run container
+func (d *Docker) Run() DockerResult {
 	ctx := context.Background()
 	reader, err := d.Client.ImagePull(
 		ctx,
 		d.Config.Image,
-		types.ImagePullOptions{})	
+		types.ImagePullOptions{})
 	if err != nil {
 		log.Printf("Error pulling image %s:%v \n", d.Config.Image, err)
 		return DockerResult{Error: err}
@@ -116,12 +117,12 @@ type TaskEvent struct {
 		Memory: d.Config.Memory,
 	}
 	cc := container.Config{
-		Image:d.Config.Image,
-		Env: d.Config.Env,
+		Image: d.Config.Image,
+		Env:   d.Config.Env,
 	}
 	hc := container.HostConfig{
-		RestartPolicy: rp,
-		Resources: r,
+		RestartPolicy:   rp,
+		Resources:       r,
 		PublishAllPorts: true,
 	}
 	//attempts to create container
@@ -129,7 +130,7 @@ type TaskEvent struct {
 		ctx, &cc, &hc, nil, nil, d.Config.Name)
 	if err != nil {
 		log.Printf("Error creating container using image %s: %v \n",
-		d.Config.Image, err)
+			d.Config.Image, err)
 		return DockerResult{Error: err}
 	}
 
@@ -141,7 +142,7 @@ type TaskEvent struct {
 	}
 	d.ContainerId = resp.ID
 	out, err := d.Client.ContainerLogs(
-		ctx, 
+		ctx,
 		resp.ID,
 		types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true},
 	)
@@ -157,13 +158,13 @@ type TaskEvent struct {
 
 	return DockerResult{
 		ContainerId: resp.ID,
-		Action: "start",
-		Result: "success",
+		Action:      "start",
+		Result:      "success",
 	}
-	
- }
 
- func (d *Docker) Stop(id string) DockerResult {
+}
+
+func (d *Docker) Stop(id string) DockerResult {
 	log.Printf("Attempting to stop container %v", id)
 	ctx := context.Background()
 	err := d.Client.ContainerStop(ctx, id, nil)
@@ -185,7 +186,7 @@ type TaskEvent struct {
 	return DockerResult{Action: "stop", Result: "success", Error: nil}
 }
 
-//helper to check if task is running
+// helper to check if task is running
 func (d *Docker) IsRunning(containerID string) (bool, error) {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv)
@@ -199,9 +200,7 @@ func (d *Docker) IsRunning(containerID string) (bool, error) {
 	}
 	return container.State.Running, nil
 }
- 
+
 func ValidateStateTransition(src State, dst State) bool {
 	return containsState(stateTransitionMap[src], dst)
 }
-
- 
