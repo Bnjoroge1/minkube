@@ -37,7 +37,10 @@ func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) {
 		m.TaskDb[id] = task
 	}
 }
-
+func (m *Manager)  AddTask(id uuid.UUID, task *task.Task) {
+	//adds task to manager
+	m.Pending.Enqueue(task)
+}
 // schedule task to workers
 // given a task, evaluate all resources available in pool of workers to find suitable worker.
 func (m *Manager) SelectWorker() string {
@@ -55,7 +58,7 @@ func (m *Manager) SelectWorker() string {
 
 // updates the status of tasks
 func (m *Manager) UpdateTasks() {
-	fmt.Println(("I will update tasks"))
+	
 }
 
 // sends tasks to workers
@@ -65,7 +68,10 @@ func (m *Manager) SendWork() {
 		//select worker to run task
 		w := m.SelectWorker()
 		e := m.Pending.Dequeue()
-		te := e.(task.TaskEvent)
+		te, err := e.(task.TaskEvent)
+		if err == false {
+			fmt.Errorf("Task %s is not a task event isntance", e)
+		}
 		t := te.Task
 		log.Printf("Pulled %v off pending queue")
 		m.EventDb[te.ID] = &te
