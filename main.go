@@ -71,7 +71,7 @@ func runTasks(w *worker.Worker) {
 			log.Printf("No tasks to process currently.\n")
 		}
 		log.Println("Sleeping for 10 seconds.")
-		log.Println("waiting for other task") //written by my girl.
+		log.Println("waiting for other task") 
 		time.Sleep(10 * time.Second)
 	}
 }
