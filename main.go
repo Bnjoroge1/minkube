@@ -59,6 +59,7 @@ func runTasks(w *worker.Worker) {
 	//another goroutine that loops over the queue and runs any existing tasks
 	for {
 		if w.Queue.Len() != 0 {
+			
 			result, task := w.RunTask()
 			if result.Error != nil {
 				log.Printf("Error running task: %v\n", result.Error)

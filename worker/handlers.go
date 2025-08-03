@@ -21,16 +21,22 @@ type ErrResponse struct {
 
 // handlers for different routers
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
+	
+	if r.ContentLength == 0 {
+		http.Error(w, "Request body is empty", http.StatusNoContent)
+		return 
+	}
+	
+
 	log.Printf("starting task handler")
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
-
 	te := task.TaskEvent{}
 	err := d.Decode(&te)
 	if err != nil {
 		msg := fmt.Sprintf("error parsing JSON: %v", err)
 		log.Printf(msg)
-		w.WriteHeader(400)
+		w.WriteHeader(http.StatusBadRequest)
 		e := ErrResponse{
 			HTTPStatusCode: 400,
 			Message:        msg,
@@ -46,15 +52,22 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	te.Task.StartTime = now
 	te.Task.State = task.Pending
 
-	a.Worker.AddTask(te.Task)
+	a.Worker.AddTask(&te.Task)
 	log.Printf("added task: %v", te)
-	w.WriteHeader(201) //specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
+	w.WriteHeader(http.StatusCreated) //specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
 	json.NewEncoder(w).Encode(te)
 }
 
 // Handler for getting tasks
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	//set the header to json
+	a.Worker.mu.Lock()
+	defer a.Worker.mu.Unlock()
+
+	tasks := make([]*task.Task, 0, len(a.Worker.TaskIds))
+	for _, task := range a.Worker.TaskIds {
+		tasks = append(tasks, task)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(a.Worker.GetTasks())
@@ -67,6 +80,8 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("No taskID passed in request.\n")
 		w.WriteHeader(400)
 	}
+	a.Worker.mu.Lock()
+	defer a.Worker.mu.Unlock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
 		log.Printf("Error parsing taskID: %v", err)
@@ -76,18 +91,20 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	taskToStop, ok := a.Worker.TaskIds[tId]
 	if !ok {
 		log.Printf("Task with ID %s not found.\n", taskID)
-		w.WriteHeader(404)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	taskCopy := *taskToStop
-	taskCopy.State = task.Completed
-	a.Worker.AddTask(taskCopy)
-	log.Printf("task stopped: %v", taskCopy)
-	w.WriteHeader(204) //successfully stopped the task.
+	taskToStop.State = task.Completed
+	
+	a.Worker.AddTask(taskToStop)
+	log.Printf("task stopped: %v", taskToStop)
+	w.WriteHeader(http.StatusAccepted) //successfully stopped the task.
 
 }
 
 func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
+	a.Worker.mu.Lock()
+	defer a.Worker.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(a.Worker.Stats)
