@@ -33,7 +33,11 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, exists := m.TaskDb[id]
-	return task, exists
+	if !exists {
+		log.Printf("Task does not exist.")
+		return nil, false
+	}
+	return task, true
 }
 
 //update task in db
@@ -45,16 +49,18 @@ func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) {
 		m.TaskDb[id] = task
 	}
 }
-func (m *Manager)  AddTask( task *task.Task) {
+func (m *Manager)  AddTask(task *task.Task) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	//adds task to manager
 	m.PendingTasks.Enqueue(task)
 }
-// schedule task to workers
-// given a task, evaluate all resources available in pool of workers to find suitable worker.
+
+
 func (m *Manager) SelectWorker() (string, error) {
+	// schedule task to workers
+	// given a task, evaluate all resources available in pool of workers to find suitable worker.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	log.Printf("selecting workers")
@@ -87,7 +93,7 @@ func (m *Manager) SendWork() {
 	if !ok {
 		log.Printf("Task %s is not a task event isntance", e)
 	}
-	log.Printf("Pulled %v task off pending queue")
+	log.Printf("Pulled %v task off pending queue", t)
 	//if there's taks that are still pending. 
 	//select worker to run task
 	w, error  := m.SelectWorker()
