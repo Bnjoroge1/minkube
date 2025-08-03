@@ -45,24 +45,22 @@ func (w *Worker) RunTask() (task.DockerResult, *task.Task) {
 	*/
 	//retrieve task from queue if it exists.
 	log.Printf("Running task")
-
+    w.mu.Lock()
+    if w.Queue.Len() == 0{
+        w.mu.Unlock()
+        return task.DockerResult{}, nil
+    }
 	t := w.Queue.Dequeue()
-	if t == nil {
-		log.Println("No tasks in the queue")
-		return task.DockerResult{Error: nil}, nil
-	}
+    w.mu.Unlock()
+
 	//cast to task.Task type
 	taskQueued, ok := t.(*task.Task)
     if !ok {
         log.Printf("Error: Item in queue is not a *task.Task")
         return task.DockerResult{Error: fmt.Errorf("Invalid type in queue")}, nil
     }
-	log.Printf("Task yet to run %v is in state %v\n", taskQueued.ID, taskQueued.State)
-	// Check if the task is already in a terminal state
-	if taskQueued.State == task.Completed || taskQueued.State == task.Failed {
-		log.Printf("Task %s is already in terminal state %d. Skipping.", taskQueued.ID, taskQueued.State)
-		return task.DockerResult{}, taskQueued
-	}
+	log.Printf("Task %v is in state %v\n", taskQueued.ID, taskQueued.State)
+
 
 	
 
@@ -70,54 +68,34 @@ func (w *Worker) RunTask() (task.DockerResult, *task.Task) {
 	var result task.DockerResult
 	var updatedTask *task.Task
 
-	log.Printf("Task %v is in state %v\n", taskQueued.ID, taskQueued.State)
-
-	if task.ValidateStateTransition(taskQueued.State, taskQueued.State) {
-		log.Printf("Valid transition from %v to %v\n", taskQueued.State, taskQueued.State)
-		w.mu.Lock()
-		defer w.mu.Unlock()
-		switch taskQueued.State {
-
-		case task.Scheduled:
-			//if it's scheduled, we want to start the task.
-			log.Printf("Starting scheduled task %v\n", taskQueued.ID)
-			result, updatedTask = w.StartTask(taskQueued)
-			
-			if result.Error != nil {
-				log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
-                return result, taskQueued
-			}
-            log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
-            updatedTask.ContainerID = result.ContainerId
-            updatedTask.State = task.Running
-            w.TaskIds[updatedTask.ID] = taskQueued
+	
+	
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    switch taskQueued.State {
+        
+        case task.Scheduled:
+            //if it's scheduled, we want to start the task.
+            log.Printf("Starting scheduled task %v\n", taskQueued.ID)
+            result, updatedTask = w.StartTask(taskQueued)
             
-			return result, updatedTask
-		case task.Running:
+            if result.Error != nil {
+                log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
+                return result, taskQueued
+            }
+            log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
+            return result, updatedTask
+        case task.Completed:
+            //if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
+            result = w.StopTask(taskQueued)
+            return result, taskQueued
 
-			log.Printf("task is still running")
-			return task.DockerResult{}, taskQueued
-		case task.Completed:
-			//if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
-			result = w.StopTask(taskQueued)
-			updatedTask = taskQueued
-			if result.Error != nil {
-				log.Printf("Error  in the stop fucntion of task %v:%v \n", taskQueued.ID, result)
-			}
+        default:
+            err := fmt.Errorf("unexpected task state: %v", taskQueued.State)
+            return  task.DockerResult{Error:err}, taskQueued
+        }
 
-			return result, updatedTask
-
-		default:
-			result.Error = fmt.Errorf("unexpected task state: %v", taskQueued.State)
-			log.Printf("Unexpected task state for task %v: %v\n", taskQueued.ID, taskQueued.State)
-		}
-
-	} else {
-		err := fmt.Errorf("you cant transition. Invalid transition from %v to %v", taskQueued.State, taskQueued.State)
-		result.Error = err
-		return result, nil
-	}
-	return result, updatedTask
+    
 }
 
 func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {

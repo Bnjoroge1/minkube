@@ -46,7 +46,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("task event: %v", te)
 	te.Task.ID = uuid.New()
-	//te.Task.ID = te.Task.ID //setting outer ID to match inner ID.
+	
 	now := time.Now().UTC()
 	te.Timestamp = now
 	te.Task.StartTime = now
