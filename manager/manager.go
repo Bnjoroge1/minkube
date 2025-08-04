@@ -41,20 +41,7 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 }
 
 //update task in db
-func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) error {
 
-	task, exists := m.TaskDb[id]; 
-	if !exists {
-		return fmt.Errorf("task does not exist in database with id: %s", id)
-	}
-	if task.State != state {
-		log.Printf("Updating task %s state from %v to %v", task.ID, task.State, state)
-		task.State = state
-	}
-	m.TaskDb[id] = task
-	return nil
-	
-}
 func (m *Manager)  AddTask(task *task.Task) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -116,10 +103,17 @@ func (m *Manager) UpdateTasks() {
 			continue
 		}
 		m.mu.Lock()
-		for _, recv_task :=  range recv_tasks {
-			ok := m.UpdateTaskState(recv_task.ID, recv_task.State)
-			if ok != nil {
-				log.Printf("Error updating task status for worekr: %s. Got error: %s", w, ok.Error())
+		for _, workerTask := range recv_tasks {
+			// The logic from UpdateTaskState is now here, inside the lock.
+			if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
+				if managerTask.State != workerTask.State {
+					log.Printf("Updating task %s state from %v to %v",
+					managerTask.ID, managerTask.State, workerTask.State)
+					managerTask.State = workerTask.State
+					managerTask.ContainerID = workerTask.ContainerID
+					managerTask.StartTime = workerTask.StartTime
+					managerTask.EndTime = workerTask.EndTime
+				}
 			}
 		}
 		m.mu.Unlock()
@@ -144,15 +138,19 @@ func (m *Manager) SendWork() {
 	m.mu.Unlock()
 	t, ok := e.(*task.Task)
 	if !ok {
-		log.Printf("Task %s is not a task event isntance", e)
+		log.Printf("Task %s is not a *task  instance", e)
+		return
 	}
+
 	log.Printf("Pulled %v task off pending queue", t)
 	//if there's taks that are still pending. 
 	//select worker to run task
 	w, error  := m.SelectWorker()
 	if error != nil {
 		log.Printf("No worker selected %s", error)
+		return
 	}
+
 	t.State = task.Scheduled
 	//create a task event
 	te := task.TaskEvent{
@@ -165,6 +163,8 @@ func (m *Manager) SendWork() {
 	data, err := json.Marshal(&t)
 	if err != nil {
 		log.Printf("Unable to marshal task object: %v.", t)
+		m.AddTask(t)
+		return
 	}
 
 	url := fmt.Sprintf("http://%s/tasks", w)
@@ -192,6 +192,8 @@ func (m *Manager) SendWork() {
 		log.Printf("Response error: %d", e.HTTPStatusCode)
 		return
 	}
+
+	log.Printf("Successfully sent task %v to worker %s", t.ID, w)
 	m.EventDb[t.ID] = &te //matching task to event db
 	m.WorkersTaskMap[w] = append(m.WorkersTaskMap[w], t.ID)
 	m.TaskWorkerMap[t.ID] = w
