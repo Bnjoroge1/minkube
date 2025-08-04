@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
+	"runtime/trace"
 	"log"
 	"minkube/task"
 	"minkube/worker"
+	"minkube/manager"
 	"os"
 	"os/signal"
 	"strconv"
@@ -15,6 +17,16 @@ import (
 )
 
 func main() {
+	f, err := os.Create("trace.out")
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	if err := trace.Start(f); err != nil {
+		panic(err)
+	}
+	defer trace.Stop()
 
 	host := os.Getenv("MINKUBE_HOST")
 	if host == "" {
@@ -40,14 +52,30 @@ func main() {
 		TaskIds: make(map[uuid.UUID]*task.Task),
 		Stats:   &worker.Stats{},
 	}
+	workers := []string{fmt.Sprintf("%s:%d", host, port)}
+     m := manager.New(workers)
+
+
 	api := worker.Api{Address: host, Port: port, Worker: &w}
-	log.Printf("API: %v", api.Worker)
+	log.Printf("API: %+v", api.Worker)
 	go runTasks(&w)     //run tasks in a goroutine
 	go w.MonitorTasks() //monitor tasks in a goroutine
 	go w.CollectStats() //collect stats in a goroutine
 	log.Printf("Starting API server on %s:%d\n", host, port)
 	go api.Start() // Start API server in a goroutine
 
+	for i := 0; i < 3; i++ {
+        t := task.Task{
+		  ID:uuid.New(),
+		  ContainerID: "",
+            Name:  fmt.Sprintf("test-container-%d", i),
+            State: task.Scheduled,
+            Image: "strm/helloworld-http",
+        }
+        
+        m.AddTask(&t)
+        m.SendWork()
+    }
 	// Keep the main function running for linux specifically.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

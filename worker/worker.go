@@ -53,7 +53,7 @@ func (w *Worker) RunTask() (task.DockerResult, *task.Task) {
 	t := w.Queue.Dequeue()
     w.mu.Unlock()
 
-	//cast to task.Task type
+	//assert that it's of task.Task type
 	taskQueued, ok := t.(*task.Task)
     if !ok {
         log.Printf("Error: Item in queue is not a *task.Task")

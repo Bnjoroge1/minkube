@@ -42,6 +42,7 @@ func New(workers []string) *Manager {
 		PendingTasks: *queue.New(),
 		TaskDb: taskDB,
 		EventDb: eventDB,
+		Workers: workers,
 		WorkersTaskMap: workersTaskMap,
 		TaskWorkerMap: taskWorkerMap,
 	}
@@ -94,18 +95,20 @@ func (m *Manager) UpdateTasks() {
 
 	for _, w := range workers {
 		wg.Add(1) //increment wg counter by one.
-		worker := w 
+		work := w 
 		go func () {
-			url := fmt.Sprintf("http://%s/tasks", w)
+			defer wg.Done()
+			url := fmt.Sprintf("http://%s/tasks", work)
 
 			resp, err := http.Get(url)
 			if err != nil {
-				log.Printf("Error retrieving tasks for this worker: %s", w)
-				continue
+				log.Printf("Error retrieving tasks for this worker: %s", work)
+				return
+				
 			}
 			decoder := json.NewDecoder(resp.Body)
 			if resp.StatusCode != http.StatusOK {
-				log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",w, resp.StatusCode)
+				log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",work, resp.StatusCode)
 				//create the error resposne
 				resp_err := worker.ErrResponse{}
 				dec_err := decoder.Decode(&resp_err)
@@ -114,7 +117,8 @@ func (m *Manager) UpdateTasks() {
 					
 				}
 				resp.Body.Close()
-				continue
+				return
+				
 
 			}
 			var recv_tasks []*task.Task
@@ -122,7 +126,8 @@ func (m *Manager) UpdateTasks() {
 			if recv_err != nil {
 				log.Printf("Could not get list of tasks from %s\n", recv_err.Error())
 				resp.Body.Close()
-				continue
+				return
+				
 			}
 			m.mu.Lock()
 			defer m.mu.Unlock()
@@ -186,7 +191,7 @@ func (m *Manager) SendWork() {
 		Task: *t,  //send a copy of task to the task event.
 	}
 
-	data, err := json.Marshal(&t)
+	data, err := json.Marshal(&te)
 	if err != nil {
 		log.Printf("Unable to marshal task object: %v.", t)
 		m.AddTask(t)

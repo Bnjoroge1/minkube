@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	//"minkube/task"
 	"os"
 	"time"
 
@@ -90,10 +91,10 @@ type DockerResult struct {
 
 // TaskEvent is a struct to represent the user's desire to change the status from one to the other.
 type TaskEvent struct {
-	ID        uuid.UUID
-	State     State
-	Timestamp time.Time
-	Task      Task
+	ID        uuid.UUID          `json:"id"`
+	State     State              `json:"state"`
+	Timestamp time.Time          `json:"timestamp"`
+	Task      Task              `json:"task"`
 }
 
 // run container
