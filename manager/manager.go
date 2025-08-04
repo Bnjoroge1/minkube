@@ -90,54 +90,62 @@ func (m *Manager) UpdateTasks() {
 	workers  := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
 	m.mu.Unlock()
+	var wg sync.WaitGroup
 
 	for _, w := range workers {
-		url := fmt.Sprintf("http://%s/tasks", w)
+		wg.Add(1) //increment wg counter by one.
+		worker := w 
+		go func () {
+			url := fmt.Sprintf("http://%s/tasks", w)
 
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Printf("Error retrieving tasks for this worker: %s", w)
-			continue
-		}
-		decoder := json.NewDecoder(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",w, resp.StatusCode)
-			//create the error resposne
-			resp_err := worker.ErrResponse{}
-			dec_err := decoder.Decode(&resp_err)
-			if dec_err != nil {
-				log.Printf("Error decoding the error: %s", dec_err.Error())
-				
+			resp, err := http.Get(url)
+			if err != nil {
+				log.Printf("Error retrieving tasks for this worker: %s", w)
+				continue
 			}
-			resp.Body.Close()
-			continue
+			decoder := json.NewDecoder(resp.Body)
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",w, resp.StatusCode)
+				//create the error resposne
+				resp_err := worker.ErrResponse{}
+				dec_err := decoder.Decode(&resp_err)
+				if dec_err != nil {
+					log.Printf("Error decoding the error: %s", dec_err.Error())
+					
+				}
+				resp.Body.Close()
+				continue
 
-		}
-		var recv_tasks []*task.Task
-		recv_err := decoder.Decode(&recv_tasks)
-		if recv_err != nil {
-			log.Printf("Could not get list of tasks from %s\n", recv_err.Error())
-			resp.Body.Close()
-			continue
-		}
-		m.mu.Lock()
-		for _, workerTask := range recv_tasks {
-			// The logic from UpdateTaskState is now here, inside the lock.
-			if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
-				if managerTask.State != workerTask.State {
-					log.Printf("Updating task %s state from %v to %v",
-					managerTask.ID, managerTask.State, workerTask.State)
-					managerTask.State = workerTask.State
-					managerTask.ContainerID = workerTask.ContainerID
-					managerTask.StartTime = workerTask.StartTime
-					managerTask.EndTime = workerTask.EndTime
+			}
+			var recv_tasks []*task.Task
+			recv_err := decoder.Decode(&recv_tasks)
+			if recv_err != nil {
+				log.Printf("Could not get list of tasks from %s\n", recv_err.Error())
+				resp.Body.Close()
+				continue
+			}
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			for _, workerTask := range recv_tasks {
+				// The logic from UpdateTaskState is now here, inside the lock.
+				if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
+					if managerTask.State != workerTask.State {
+						log.Printf("Updating task %s state from %v to %v",
+						managerTask.ID, managerTask.State, workerTask.State)
+						managerTask.State = workerTask.State
+						managerTask.ContainerID = workerTask.ContainerID
+						managerTask.StartTime = workerTask.StartTime
+						managerTask.EndTime = workerTask.EndTime
+					}
 				}
 			}
-		}
-		m.mu.Unlock()
+		}()
 		
 
 	}
+	wg.Wait()
+	log.Println("Finished task status update cycle.")
+
 
 }
 
