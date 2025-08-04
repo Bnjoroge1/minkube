@@ -64,7 +64,7 @@ func main() {
 	log.Printf("Starting API server on %s:%d\n", host, port)
 	go api.Start() // Start API server in a goroutine
 
-	for i := 0; i < 3; i++ {
+	for i := 4; i < 6; i++ {
         t := task.Task{
 		  ID:uuid.New(),
 		  ContainerID: "",
@@ -76,13 +76,29 @@ func main() {
         m.AddTask(&t)
         m.SendWork()
     }
+
+	go func () {
+		for {
+			fmt.Printf("Getting status update from worker: %v", &w.Name)
+			err := m.UpdateTasks()
+			if err != nil {
+				log.Printf("Error getting a status update: %v", err)
+			}
+			time.Sleep(15*time.Second)
+		}
+	} ()
+
+	for _, t := range m.TaskDb {              
+		fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
+		time.Sleep(15 * time.Second)
+		}
+	
 	// Keep the main function running for linux specifically.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
 }
-
 func runTasks(w *worker.Worker) {
 	//another goroutine that loops over the queue and runs any existing tasks
 	for {

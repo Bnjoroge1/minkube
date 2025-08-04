@@ -25,7 +25,6 @@ type Manager struct {
 	lastWorker     int //track last worker to send task to
 	mu         sync.Mutex 
 		
-
 }
 
 func New(workers []string) *Manager {
@@ -84,51 +83,52 @@ func (m *Manager) SelectWorker() (string, error) {
 }
 
 // updates the status of tasks
-func (m *Manager) UpdateTasks() {
+func (m *Manager) UpdateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
 
 	m.mu.Lock()
-	workers  := make([]string, len(m.Workers))
+	workers := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
 	m.mu.Unlock()
 	var wg sync.WaitGroup
+	errCh := make(chan error, len(workers))
 
 	for _, w := range workers {
 		wg.Add(1) //increment wg counter by one.
-		work := w 
-		go func () {
+		work := w
+		go func() {
 			defer wg.Done()
 			url := fmt.Sprintf("http://%s/tasks", work)
 
 			resp, err := http.Get(url)
 			if err != nil {
-				log.Printf("Error retrieving tasks for this worker: %s", work)
+				log.Printf("Error retrieving tasks for this worker %s: %v", work, err)
+				errCh <- fmt.Errorf("error retrieving tasks for worker %s: %w", work, err)
 				return
-				
 			}
+			defer resp.Body.Close()
+
 			decoder := json.NewDecoder(resp.Body)
 			if resp.StatusCode != http.StatusOK {
-				log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",work, resp.StatusCode)
-				//create the error resposne
+				log.Printf("Error: retrieved list from worker: %s. Received status code: %d", work, resp.StatusCode)
+				//create the error response
 				resp_err := worker.ErrResponse{}
 				dec_err := decoder.Decode(&resp_err)
 				if dec_err != nil {
-					log.Printf("Error decoding the error: %s", dec_err.Error())
-					
+					log.Printf("Error decoding the error response: %s", dec_err.Error())
 				}
-				resp.Body.Close()
+				errCh <- fmt.Errorf("error response from worker %s: status %d", work, resp.StatusCode)
 				return
-				
-
 			}
+
 			var recv_tasks []*task.Task
 			recv_err := decoder.Decode(&recv_tasks)
 			if recv_err != nil {
-				log.Printf("Could not get list of tasks from %s\n", recv_err.Error())
-				resp.Body.Close()
+				log.Printf("Could not decode list of tasks from %s: %v\n", work, recv_err)
+				errCh <- fmt.Errorf("could not decode list of tasks from %s: %w", work, recv_err)
 				return
-				
 			}
+
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			for _, workerTask := range recv_tasks {
@@ -136,7 +136,7 @@ func (m *Manager) UpdateTasks() {
 				if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
 					if managerTask.State != workerTask.State {
 						log.Printf("Updating task %s state from %v to %v",
-						managerTask.ID, managerTask.State, workerTask.State)
+							managerTask.ID, managerTask.State, workerTask.State)
 						managerTask.State = workerTask.State
 						managerTask.ContainerID = workerTask.ContainerID
 						managerTask.StartTime = workerTask.StartTime
@@ -145,13 +145,20 @@ func (m *Manager) UpdateTasks() {
 				}
 			}
 		}()
-		
-
 	}
 	wg.Wait()
+	close(errCh)
+
+	// Check for any errors sent by the goroutines.
+	for err := range errCh {
+		if err != nil {
+			// Return the first error encountered.
+			return err
+		}
+	}
+
 	log.Println("Finished task status update cycle.")
-
-
+	return nil
 }
 
 // sends tasks to workers

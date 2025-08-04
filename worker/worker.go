@@ -73,27 +73,29 @@ func (w *Worker) RunTask() (task.DockerResult, *task.Task) {
     w.mu.Lock()
     defer w.mu.Unlock()
     switch taskQueued.State {
+    case task.Pending:
+        taskQueued.State = task.Scheduled
+        fallthrough //manually fall through to next case
+    case task.Scheduled:
+        //if it's scheduled, we want to start the task.
+        log.Printf("Starting scheduled task %v\n", taskQueued.ID)
+        result, updatedTask = w.StartTask(taskQueued)
         
-        case task.Scheduled:
-            //if it's scheduled, we want to start the task.
-            log.Printf("Starting scheduled task %v\n", taskQueued.ID)
-            result, updatedTask = w.StartTask(taskQueued)
-            
-            if result.Error != nil {
-                log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
-                return result, taskQueued
-            }
-            log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
-            return result, updatedTask
-        case task.Completed:
-            //if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
-            result = w.StopTask(taskQueued)
+        if result.Error != nil {
+            log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
             return result, taskQueued
-
-        default:
-            err := fmt.Errorf("unexpected task state: %v", taskQueued.State)
-            return  task.DockerResult{Error:err}, taskQueued
         }
+        log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
+        return result, updatedTask
+    case task.Completed:
+        //if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
+        result = w.StopTask(taskQueued)
+        return result, taskQueued
+
+    default:
+        err := fmt.Errorf("unexpected task state: %v", taskQueued.State)
+        return  task.DockerResult{Error:err}, taskQueued
+    }
 
     
 }
