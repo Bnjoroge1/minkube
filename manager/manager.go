@@ -41,13 +41,19 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 }
 
 //update task in db
-func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if task, exists := m.TaskDb[id]; exists {
-		task.State = state
-		m.TaskDb[id] = task
+func (m *Manager) UpdateTaskState(id uuid.UUID, state task.State) error {
+
+	task, exists := m.TaskDb[id]; 
+	if !exists {
+		return fmt.Errorf("task does not exist in database with id: %s", id)
 	}
+	if task.State != state {
+		log.Printf("Updating task %s state from %v to %v", task.ID, task.State, state)
+		task.State = state
+	}
+	m.TaskDb[id] = task
+	return nil
+	
 }
 func (m *Manager)  AddTask(task *task.Task) {
 	m.mu.Lock()
@@ -73,7 +79,54 @@ func (m *Manager) SelectWorker() (string, error) {
 
 // updates the status of tasks
 func (m *Manager) UpdateTasks() {
-	
+	//get the status of tasks in manager's queue from workers and update it.
+
+	m.mu.Lock()
+	workers  := make([]string, len(m.Workers))
+	copy(workers, m.Workers)
+	m.mu.Unlock()
+
+	for _, w := range workers {
+		url := fmt.Sprintf("http://%s/tasks", w)
+
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("Error retrieving tasks for this worker: %s", w)
+			continue
+		}
+		decoder := json.NewDecoder(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Error: retrieveed list from worker: %s. Received status code: %d",w, resp.StatusCode)
+			//create the error resposne
+			resp_err := worker.ErrResponse{}
+			dec_err := decoder.Decode(&resp_err)
+			if dec_err != nil {
+				log.Printf("Error decoding the error: %s", dec_err.Error())
+				
+			}
+			resp.Body.Close()
+			continue
+
+		}
+		var recv_tasks []*task.Task
+		recv_err := decoder.Decode(&recv_tasks)
+		if recv_err != nil {
+			log.Printf("Could not get list of tasks from %s\n", recv_err.Error())
+			resp.Body.Close()
+			continue
+		}
+		m.mu.Lock()
+		for _, recv_task :=  range recv_tasks {
+			ok := m.UpdateTaskState(recv_task.ID, recv_task.State)
+			if ok != nil {
+				log.Printf("Error updating task status for worekr: %s. Got error: %s", w, ok.Error())
+			}
+		}
+		m.mu.Unlock()
+		
+
+	}
+
 }
 
 // sends tasks to workers
