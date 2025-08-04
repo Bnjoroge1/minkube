@@ -28,6 +28,24 @@ type Manager struct {
 
 }
 
+func New(workers []string) *Manager {
+	taskDB := make(map[uuid.UUID]*task.Task)
+	eventDB := make(map[uuid.UUID]*task.TaskEvent)
+	workersTaskMap := make(map[string][]uuid.UUID)
+	taskWorkerMap := make(map[uuid.UUID]string)
+
+	for _,worker := range workers {
+		workersTaskMap[worker] = []uuid.UUID{}
+	}
+
+	return &Manager{
+		PendingTasks: *queue.New(),
+		TaskDb: taskDB,
+		EventDb: eventDB,
+		WorkersTaskMap: workersTaskMap,
+		TaskWorkerMap: taskWorkerMap,
+	}
+}
 // Get task from db
 func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 	m.mu.Lock()
