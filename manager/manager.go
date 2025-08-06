@@ -81,9 +81,25 @@ func (m *Manager) SelectWorker() (string, error) {
 	m.lastWorker = (m.lastWorker + 1) % len(m.Workers)
 	return m.Workers[m.lastWorker], nil
 }
-
+func (m *Manager) UpdateTasks() {
+    for {
+        log.Println("Checking for task updates from workers")
+        m.updateTasks()
+        log.Println("Task updates completed")
+        log.Println("Sleeping for 15 seconds")
+        time.Sleep(15 * time.Second)
+    }
+}
+func (m *Manager) ProcessTasks() {
+    for {
+        log.Println("Processing any tasks in the queue")
+        m.SendWork()
+        log.Println("Sleeping for 10 seconds")
+        time.Sleep(10 * time.Second)
+    }
+}
 // updates the status of tasks
-func (m *Manager) UpdateTasks() error {
+func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
 
 	m.mu.Lock()
@@ -237,4 +253,12 @@ func (m *Manager) SendWork() {
 	m.TaskWorkerMap[t.ID] = w
 	m.TaskDb[t.ID] = t
 	
+}
+
+func (m *Manager) GetTasks() []*task.Task {
+    tasks := []*task.Task{}
+    for _, t := range m.TaskDb {
+        tasks = append(tasks, t)
+    }
+    return tasks
 }

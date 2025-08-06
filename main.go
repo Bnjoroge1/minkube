@@ -1,19 +1,20 @@
 package main
 
 import (
-	"fmt"
-	"github.com/golang-collections/collections/queue"
-	"github.com/google/uuid"
-	"runtime/trace"
 	"log"
+	"minkube/manager"
 	"minkube/task"
 	"minkube/worker"
-	"minkube/manager"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
-	"time"
+
+	"runtime/trace"
+
+	"github.com/golang-collections/collections/queue"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -28,95 +29,72 @@ func main() {
 	}
 	defer trace.Stop()
 
+	role := os.Getenv("MINKUBE_ROLE")
+	if role == "" {
+		log.Fatal("MINKUBE_ROLE environment variable is not set (e.g., 'manager' or 'worker')")
+	}
+
+	switch role {
+	case "manager":
+		runManager()
+	case "worker":
+		runWorker()
+	default:
+		log.Fatalf("Unknown role: %s", role)
+	}
+}
+
+func runManager() {
+	log.Println("Starting in manager mode...")
+	workersStr := os.Getenv("MINKUBE_WORKERS")
+	if workersStr == "" {
+		log.Fatal("MINKUBE_WORKERS environment variable not set (e.g., 'localhost:9001,localhost:9002')")
+	}
+	workers := strings.Split(workersStr, ",")
+	m := manager.New(workers)
+
+	// The manager needs its own API to accept tasks from users.
+	managerApi := manager.Api{
+		Address: "localhost",
+		Port:    8080, // Manager listens on a different port
+		Manager: m,
+	}
+
+	go m.ProcessTasks()
+	go m.UpdateTasks()
+	go managerApi.Start()
+
+	log.Println("Manager API server started on port 8080")
+	// Keep the main function running.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+}
+
+func runWorker() {
+	log.Println("Starting in worker mode...")
 	host := os.Getenv("MINKUBE_HOST")
-	if host == "" {
-		host = "localhost"
-		log.Fatalf("MINKUBE_HOST is not set")
-	}
 	portStr := os.Getenv("MINKUBE_PORT")
-	if portStr == "" {
-		portStr = "8080"
-		log.Fatal("MINKUBE_PORT environment variable is not set")
-	} else {
-		log.Printf("Using port %s", portStr)
-	}
+	port, _ := strconv.ParseInt(portStr, 10, 64)
 
-	port, err := strconv.ParseInt(portStr, 10, 64)
-	if err != nil {
-		log.Fatalf("Invalid MINKUBE_PORT value: %v", err)
-	}
-
-	fmt.Printf("Starting Minkube worker on %s:%d\n", host, port)
 	w := worker.Worker{
 		Queue:   *queue.New(),
 		TaskIds: make(map[uuid.UUID]*task.Task),
 		Stats:   &worker.Stats{},
 	}
-	workers := []string{fmt.Sprintf("%s:%d", host, port)}
-     m := manager.New(workers)
 
+	workerApi := worker.Api{Address: host, Port: port, Worker: &w}
 
-	api := worker.Api{Address: host, Port: port, Worker: &w}
-	log.Printf("API: %+v", api.Worker)
-	go runTasks(&w)     //run tasks in a goroutine
-	go w.MonitorTasks() //monitor tasks in a goroutine
-	go w.CollectStats() //collect stats in a goroutine
-	log.Printf("Starting API server on %s:%d\n", host, port)
-	go api.Start() // Start API server in a goroutine
+	go w.RunTasks()
+	go w.MonitorTasks()
+	go w.CollectStats()
+	go workerApi.Start()
 
-	for i := 4; i < 6; i++ {
-        t := task.Task{
-		  ID:uuid.New(),
-		  ContainerID: "",
-            Name:  fmt.Sprintf("test-container-%d", i),
-            State: task.Scheduled,
-            Image: "strm/helloworld-http",
-        }
-        
-        m.AddTask(&t)
-        m.SendWork()
-    }
-
-	go func () {
-		for {
-			fmt.Printf("Getting status update from worker: %v", &w.Name)
-			err := m.UpdateTasks()
-			if err != nil {
-				log.Printf("Error getting a status update: %v", err)
-			}
-			time.Sleep(15*time.Second)
-		}
-	} ()
-
-	for _, t := range m.TaskDb {              
-		fmt.Printf("[Manager] Task: id: %s, state: %d\n", t.ID, t.State)
-		time.Sleep(15 * time.Second)
-		}
-	
-	// Keep the main function running for linux specifically.
+	log.Printf("Worker API server started on %s:%d", host, port)
+	// Keep the main function running.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
-
 }
-func runTasks(w *worker.Worker) {
-	//another goroutine that loops over the queue and runs any existing tasks
-	for {
-		if w.Queue.Len() != 0 {
-			
-			result, task := w.RunTask()
-			if result.Error != nil {
-				log.Printf("Error running task: %v\n", result.Error)
-			}
-			if task != nil {
-				log.Printf("Task %v is with state %v\n", task.ID, task.State)
-			}
 
-		} else {
-			log.Printf("No tasks to process currently.\n")
-		}
-		log.Println("Sleeping for 10 seconds.")
-		log.Println("waiting for other task") 
-		time.Sleep(10 * time.Second)
-	}
-}
+

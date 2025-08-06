@@ -30,6 +30,10 @@ type Task struct {
 	StartTime      time.Time         `json:"startTime"`
 	EndTime        time.Time         `json:"endTime"`
 }
+type DockerInspectResponse struct {
+	Error error
+	Container *types.ContainerJSON
+} 
 
 // docker container config
 type Config struct {
@@ -202,6 +206,3 @@ func (d *Docker) IsRunning(containerID string) (bool, error) {
 	return container.State.Running, nil
 }
 
-func ValidateStateTransition(src State, dst State) bool {
-	return containsState(stateTransitionMap[src], dst)
-}

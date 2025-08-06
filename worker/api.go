@@ -17,7 +17,6 @@ type Api struct {
 
 func (a *Api) initRouter() {
 	a.Router = chi.NewRouter()
-	a.Router = chi.NewRouter()
 	log.Printf("initializing router")
 	a.Router.Route("/tasks", func(r chi.Router) {
 		r.Post("/", a.StartTaskHandler)
@@ -34,7 +33,6 @@ func (a *Api) Start() {
 	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
 	err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
 	if err != nil {
-		log.Fatalf("Failed to start server: %v", err)
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

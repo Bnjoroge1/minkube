@@ -32,8 +32,29 @@ func (w *Worker) CollectStats() {
 		time.Sleep(15 * time.Second)
 	}
 }
+func(w *Worker) RunTasks() {
+	//another goroutine that loops over the queue and runs any existing tasks
+	for {
+		if w.Queue.Len() != 0 {
+			
+			result, task := w.runTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+			if task != nil {
+				log.Printf("Task %v is with state %v\n", task.ID, task.State)
+			}
 
-func (w *Worker) RunTask() (task.DockerResult, *task.Task) {
+		} else {
+			log.Printf("No tasks to process currently.\n")
+		}
+		log.Println("Sleeping for 10 seconds.")
+		log.Println("waiting for other task") 
+		time.Sleep(10 * time.Second)
+	}
+}
+
+func (w *Worker) runTask() (task.DockerResult, *task.Task) {
 	//responsible for identifying the task’s current state, and then either starting or stopping a task based on the state.
 
 	/* There are two possible scenarios for handling tasks:

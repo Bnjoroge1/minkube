@@ -61,9 +61,10 @@ clean:
 
 # Run the application
 .PHONY: run
-run:
-	MINKUBE_HOST=localhost MINKUBE_PORT=9000 $(GOCMD) run main.go
-
+run-worker:
+	MINKUBE_HOST=localhost MINKUBE_PORT=8000 MINKUBE_ROLE=worker $(GOCMD) run main.go
+run-manager:
+	MINKUBE_WORKERS=localhost:8000 MINKUBE_ROLE=manager $(GOCMD) run main.go
 # Run with custom environment
 .PHONY: run-dev
 run-dev:
