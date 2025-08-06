@@ -11,7 +11,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
 )
@@ -51,13 +50,14 @@ type Config struct {
 
 }
 
-func NewConfig(t *Task) *Config {
+func (task *Task) NewConfig(t *Task) *Config {
 	log.Printf("NewConfig: Creating config for task %v", t.ID)
 
 	config := &Config{
 		Name:  t.Name,
 		Image: t.Image,
-
+		Memory: int64(t.Memory),
+		Disk: int64(t.Disk),
 		RestartPolicy: t.RestartPolicy,
 	}
 	log.Printf("NewConfig: Created config for task %v", t.ID)
@@ -66,12 +66,11 @@ func NewConfig(t *Task) *Config {
 
 // mapping task to docker container
 type Docker struct {
-	Client      *client.Client
 	Config      Config
 	ContainerId string
 }
 
-func NewDocker(c *Config) *Docker {
+func (task *Task) NewDocker(c *Config) *Docker {
 	log.Printf("NewDocker: Creating Docker client")
 	dc, _ := client.NewClientWithOpts(client.FromEnv)
 	if dc == nil {
@@ -80,7 +79,6 @@ func NewDocker(c *Config) *Docker {
 	}
 	log.Printf("NewDocker: Created Docker client")
 	return &Docker{
-		Client: dc,
 		Config: *c,
 	}
 }
@@ -102,9 +100,9 @@ type TaskEvent struct {
 }
 
 // run container
-func (d *Docker) Run() DockerResult {
+func (d *Docker) Run(client *client.Client) DockerResult {
 	ctx := context.Background()
-	reader, err := d.Client.ImagePull(
+	reader, err := client.ImagePull(
 		ctx,
 		d.Config.Image,
 		types.ImagePullOptions{})
@@ -131,7 +129,7 @@ func (d *Docker) Run() DockerResult {
 		PublishAllPorts: true,
 	}
 	//attempts to create container
-	resp, err := d.Client.ContainerCreate(
+	resp, err := client.ContainerCreate(
 		ctx, &cc, &hc, nil, nil, d.Config.Name)
 	if err != nil {
 		log.Printf("Error creating container using image %s: %v \n",
@@ -140,26 +138,18 @@ func (d *Docker) Run() DockerResult {
 	}
 
 	//start container
-	err = d.Client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	err = client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
 	if err != nil {
 		log.Printf("Error starting container %s: %v\n", resp.ID, err)
 		return DockerResult{Error: err}
 	}
 	d.ContainerId = resp.ID
-	out, err := d.Client.ContainerLogs(
-		ctx,
-		resp.ID,
-		types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true},
-	)
+	
 	if err != nil {
 		log.Printf("Error getting container logs %s: %v\n", resp.ID, err)
 		return DockerResult{Error: err}
 	}
-	_, err = stdcopy.StdCopy(os.Stdout, os.Stderr, out)
-	if err != nil {
-		log.Printf("Error copying container logs to stdout/stderr: %v\n", err)
-		return DockerResult{Error: err}
-	}
+	
 
 	return DockerResult{
 		ContainerId: resp.ID,
@@ -169,10 +159,10 @@ func (d *Docker) Run() DockerResult {
 
 }
 
-func (d *Docker) Stop(id string) DockerResult {
+func (d *Docker) Stop(client *client.Client, id string) DockerResult {
 	log.Printf("Attempting to stop container %v", id)
 	ctx := context.Background()
-	err := d.Client.ContainerStop(ctx, id, nil)
+	err := client.ContainerStop(ctx, id, nil)
 	if err != nil {
 		return DockerResult{
 			Action: "stop",
@@ -180,7 +170,7 @@ func (d *Docker) Stop(id string) DockerResult {
 			Error:  err,
 		}
 	}
-	err = d.Client.ContainerRemove(ctx, id, types.ContainerRemoveOptions{})
+	err = client.ContainerRemove(ctx, id, types.ContainerRemoveOptions{})
 	if err != nil {
 		return DockerResult{
 			Action: "stop",
@@ -192,28 +182,23 @@ func (d *Docker) Stop(id string) DockerResult {
 }
 
 // helper to check if task is running
-func (d *Docker) IsRunning(containerID string) (bool, error) {
+func (d *Docker) IsRunning(client *client.Client, containerID string) (bool, error) {
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		return false, err
-	}
-	defer cli.Close()
-	container, err := cli.ContainerInspect(ctx, containerID)
+	container, err := client.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return false, err
 	}
 	return container.State.Running, nil
 }
 
-func (d *Docker) InspectContainer(containerID string) DockerInspectResponse {
-	dc, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		log.Printf("Could not create client beause of error: %v", err)
+func (d *Docker) InspectContainer(client *client.Client, containerID string) DockerInspectResponse {
+	
+	ctx := context.Background()
+	response, err := client.ContainerInspect(ctx, containerID)
+	if err != nil{
+		log.Printf("Error inspecting the container: %s, %v", containerID, err)
 		return DockerInspectResponse{Error: err}
 	}
-	ctx := context.Background()
-	response, err := dc.ContainerInspect(ctx, containerID)
 	return DockerInspectResponse{
 		Container: &response,
 	}

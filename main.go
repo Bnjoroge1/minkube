@@ -13,6 +13,7 @@ import (
 
 	"runtime/trace"
 
+	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
@@ -76,11 +77,16 @@ func runWorker() {
 	host := os.Getenv("MINKUBE_HOST")
 	portStr := os.Getenv("MINKUBE_PORT")
 	port, _ := strconv.ParseInt(portStr, 10, 64)
+	dc, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		log.Fatalf("Failed to create docker client: %v", err)
+	}
 
 	w := worker.Worker{
 		Queue:   *queue.New(),
 		TaskIds: make(map[uuid.UUID]*task.Task),
 		Stats:   &worker.Stats{},
+		DockerClient: dc,
 	}
 
 	workerApi := worker.Api{Address: host, Port: port, Worker: &w}

@@ -1,4 +1,5 @@
 package worker
+
 import (
 	"fmt"
 	"log"
@@ -7,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
@@ -17,6 +19,7 @@ type Worker struct {
 	TaskIds   map[uuid.UUID]*task.Task //stores the task ids which can be referenced in the manager by the ID
 	TaskCount int
 	Stats     *Stats
+    DockerClient *client.Client
 	mu        sync.Mutex
 }
 
@@ -133,8 +136,8 @@ func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {
 	//set up necessary fields
 	t.StartTime = time.Now().UTC()
 
-	config := task.NewConfig(t)
-	d := task.NewDocker(config)
+	config := t.NewConfig(t)
+	d := t.NewDocker(config)
 	if d == nil {
 		log.Printf("StartTask: Failed to create Docker object for task %v", t.ID)
 		t.State = task.Failed
@@ -143,7 +146,7 @@ func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {
 	}
 
 	//run the task
-	result := d.Run()
+	result := d.Run(w.DockerClient)
 
 	if result.Error != nil {
 		log.Printf("Error starting task %v:%v \n", t.ID, result)
@@ -166,10 +169,10 @@ func (w *Worker) StopTask(t *task.Task) task.DockerResult {
 	defer w.mu.Unlock()
 	log.Printf("Attempting to stop container with ID: %s", t.ContainerID)
 	//receives a task and stops it
-	config := task.NewConfig(t)
-	d := task.NewDocker(config)
+	config := t.NewConfig(t)
+	d := t.NewDocker(config)
 
-	result := d.Stop(t.ContainerID)
+	result := d.Stop(w.DockerClient, t.ContainerID)
 	if result.Error != nil {
 		log.Printf("Error occurred in worker stopping container %v: %v \n", t.ContainerID, result)
 	}
@@ -194,9 +197,9 @@ func (w *Worker) IsTaskRunning(t task.Task, containerID string) (bool, error) {
 	if containerID == "" {
 		return false, nil
 	}
-	config := task.NewConfig(&t)
-	d := task.NewDocker(config)
-	isRunning, err := d.IsRunning(containerID)
+	config := t.NewConfig(&t)
+	d := t.NewDocker(config)
+	isRunning, err := d.IsRunning(w.DockerClient, containerID)
 	if err != nil {
 		// If the container is not found, it's not running
 		if strings.Contains(err.Error(), "No such container") {
@@ -249,5 +252,13 @@ case task.Running:
 	}
 }
 
+func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
+    config := t.NewConfig(&t)
+    d := t.NewDocker(config)
 
+    response := d.InspectContainer(w.DockerClient, t.ContainerID)
+    
+    return response
+    
+}
 
