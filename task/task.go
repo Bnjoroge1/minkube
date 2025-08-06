@@ -206,3 +206,15 @@ func (d *Docker) IsRunning(containerID string) (bool, error) {
 	return container.State.Running, nil
 }
 
+func (d *Docker) InspectContainer(containerID string) DockerInspectResponse {
+	dc, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		log.Printf("Could not create client beause of error: %v", err)
+		return DockerInspectResponse{Error: err}
+	}
+	ctx := context.Background()
+	response, err := dc.ContainerInspect(ctx, containerID)
+	return DockerInspectResponse{
+		Container: &response,
+	}
+}

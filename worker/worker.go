@@ -229,12 +229,13 @@ func (w *Worker) MonitorTasks() {
 							t.State = task.Running
 						}
 					} else {
-						if t.State == task.Running {
+						switch t.State {
+case task.Running:
 							log.Printf("Task %s is no longer running. Updating state to Completed", id)
 							t.State = task.Completed
 							t.EndTime = time.Now().UTC()
 							log.Printf("Task %s completed. Start time: %v, End time: %v", id, t.StartTime, t.EndTime)
-						} else if t.State == task.Scheduled {
+						case task.Scheduled:
 							log.Printf("Task %s failed to start. Updating state to Failed", id)
 							t.State = task.Failed
 							t.EndTime = time.Now().UTC()
@@ -247,3 +248,6 @@ func (w *Worker) MonitorTasks() {
 		}
 	}
 }
+
+
+
