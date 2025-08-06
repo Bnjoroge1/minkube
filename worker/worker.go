@@ -210,46 +210,60 @@ func (w *Worker) IsTaskRunning(t task.Task, containerID string) (bool, error) {
 	return isRunning, nil
 }
 func (w *Worker) MonitorTasks() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
+    for {
+        // 1. Create a list of tasks to check to avoid holding the lock for long.
+        var tasksToInspect []*task.Task
+        w.mu.Lock()
+        for _, t := range w.TaskIds {
+            if t.State == task.Running {
+                tasksToInspect = append(tasksToInspect, t)
+            }
+        }
+        w.mu.Unlock()
 
-	for {
-		select {
-		case <-ticker.C:
-			w.mu.Lock()
-			for id, t := range w.TaskIds {
-				if t.State != task.Completed && t.State != task.Failed {
-					isRunning, err := w.IsTaskRunning(*t, t.ContainerID)
-					log.Printf("MonitorTasks: Is task %v running? %v", id, isRunning)
-					log.Printf("MonitorTasks: Checking task %v (State: %v, ContainerID: %v)", id, t.State, t.ContainerID)
-					if err != nil {
-						log.Printf("Error checking task status for %s: %v", id, err)
-						continue
-					}
-					if isRunning {
-						if t.State != task.Running {
-							log.Printf("Task %s is now running. Updating state to Running", id)
-							t.State = task.Running
-						}
-					} else {
-						switch t.State {
-case task.Running:
-							log.Printf("Task %s is no longer running. Updating state to Completed", id)
-							t.State = task.Completed
-							t.EndTime = time.Now().UTC()
-							log.Printf("Task %s completed. Start time: %v, End time: %v", id, t.StartTime, t.EndTime)
-						case task.Scheduled:
-							log.Printf("Task %s failed to start. Updating state to Failed", id)
-							t.State = task.Failed
-							t.EndTime = time.Now().UTC()
-							log.Printf("Task %s failed. Start time: %v, End time: %v", id, t.StartTime, t.EndTime)
-						}
-					}
-				}
-			}
-			w.mu.Unlock()
-		}
-	}
+        log.Printf("Reconciliation loop: checking %d running tasks", len(tasksToInspect))
+
+        // 2. Now, iterate over the copy, performing slow I/O operations.
+        for _, t := range tasksToInspect {
+            resp := w.InspectTask(*t)
+            if resp.Error != nil {
+                log.Printf("MonitorTasks: Error inspecting task %s: %v", t.ID, resp.Error)
+                // The container might have been removed. Mark as failed.
+                w.updateTaskState(t.ID, task.Failed)
+                continue
+            }
+
+            if resp.Container == nil {
+                log.Printf("MonitorTasks: No container info for running task %s", t.ID)
+                w.updateTaskState(t.ID, task.Failed)
+                continue
+            }
+
+            // 3. Check the container's status and update if it has exited.
+            if resp.Container.State.Status == "exited" {
+                log.Printf("MonitorTasks: Container for task %s has exited.", t.ID)
+                w.updateTaskState(t.ID, task.Failed)
+            }
+
+            // 4. Update the task's HostPorts with the actual assigned ports.
+            w.mu.Lock()
+            if taskToUpdate, ok := w.TaskIds[t.ID]; ok {
+                taskToUpdate.HostPorts = resp.Container.NetworkSettings.Ports
+            }
+            w.mu.Unlock()
+        }
+
+        // 5. Sleep for a while before the next reconciliation cycle.
+        time.Sleep(15 * time.Second)
+    }
+}
+func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
+    w.mu.Lock()
+    defer w.mu.Unlock()
+    if task, ok := w.TaskIds[taskID]; ok {
+        task.State = newState
+        task.EndTime = time.Now().UTC()
+    }
 }
 
 func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {

@@ -24,10 +24,13 @@ type Task struct {
 	Memory         int               `json:"memory"`
 	Disk           int               `json:"disk"`
 	ExposedPortSet nat.PortSet       `json:"exposedPortSet"`
+	HostPorts      nat.PortMap       `json:"hostPorts"` //ports assigned by docker
 	PortBindings   map[string]string `json:"portBindings"`
 	RestartPolicy  string            `json:"restartPolicy"`
 	StartTime      time.Time         `json:"startTime"`
 	EndTime        time.Time         `json:"endTime"`
+	HealthCheck string
+	RestartCount int
 }
 type DockerInspectResponse struct {
 	Error error
