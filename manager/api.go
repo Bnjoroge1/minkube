@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"log"
 	"github.com/go-chi/chi/v5"
+	  _ "net/http/pprof"
 )
 
 
@@ -18,6 +19,7 @@ type Api struct {
 func (a *Api) initRouter() {
 	a.Router = chi.NewRouter()
 	log.Printf("Initializing new router")
+	a.Router.Mount("/debug", http.DefaultServeMux)
 	a.Router.Route("/tasks", func (r chi.Router)  {
 		r.Post("/", a.StartTaskHandler)
 		r.Get("/", a.GetTasksHandler)

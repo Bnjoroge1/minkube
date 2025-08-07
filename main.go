@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	  _ "net/http/pprof"
 
 	"runtime/trace"
 
