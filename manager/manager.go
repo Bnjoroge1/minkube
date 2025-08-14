@@ -48,10 +48,7 @@ var httpClient = &http.Client{
 	IdleConnTimeout: 90*time.Second,
 	DisableKeepAlives: false,  //enable conenction reuse. 
 	ForceAttemptHTTP2: true,  //use HTTP2 if available
-
     },
-
-    
 }
 
 
@@ -175,6 +172,8 @@ func (m *Manager) ProcessTasks() {
 // updates the status of tasks
 func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
 	m.mu.RLock() //read-heavy lock
 	workers := make([]string, len(m.Workers))
@@ -189,8 +188,7 @@ func (m *Manager) updateTasks() error {
 		go func() {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
+			
 
 			url := fmt.Sprintf("http://%s/tasks?page=1&limit=10000", work)
 
@@ -200,6 +198,7 @@ func (m *Manager) updateTasks() error {
 				errCh <- fmt.Errorf("error retrieving tasks for worker %s: %w", work, err)
 				return
 			}
+			
 			resp, err := httpClient.Do(req)
 			if err != nil {
 				log.Printf("Error receiving tasks for worker %s:%v\n",work,  err)
