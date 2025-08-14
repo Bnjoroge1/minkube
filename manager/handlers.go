@@ -21,11 +21,7 @@ type ErrResponse struct {
 	Message        string `json:"message"`
 }
 
-const (
-    MAX_TASKS = 10000
-    TASK_RETENTION_HOURS = 24 // Keep tasks for 24 hours
-    CLEANUP_INTERVAL = 1 * time.Hour // Clean up every hour
-)
+
 var bytesPool = sync.Pool{
 		New: func() interface{}{
 		return make([]byte, 0, 1024)

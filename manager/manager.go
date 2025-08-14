@@ -23,10 +23,22 @@ type Manager struct {
 	WorkersTaskMap map[string][]uuid.UUID //maps worker to task itself
 	TaskWorkerMap  map[uuid.UUID]string
 	lastWorker     int //track last worker to send task to
+	LastCleanupTime time.Time
 	mu         sync.Mutex 
-		
+	
 }
 
+type PaginatedTaskResponse struct {
+    Tasks      []*task.Task `json:"tasks"`
+    Pagination struct {
+        Page       int `json:"page"`
+        Limit      int `json:"limit"`
+        TotalTasks int `json:"total_tasks"`
+        TotalPages int `json:"total_pages"`
+        HasNext    bool `json:"has_next"`
+        HasPrev    bool `json:"has_prev"`
+    } `json:"pagination"`
+}
 func New(workers []string) *Manager {
 	taskDB := make(map[uuid.UUID]*task.Task)
 	eventDB := make(map[uuid.UUID]*task.TaskEvent)
@@ -36,16 +48,19 @@ func New(workers []string) *Manager {
 	for _,worker := range workers {
 		workersTaskMap[worker] = []uuid.UUID{}
 	}
-
-	return &Manager{
+	manager :=&Manager{
 		PendingTasks: *queue.New(),
 		TaskDb: taskDB,
 		EventDb: eventDB,
 		Workers: workers,
 		WorkersTaskMap: workersTaskMap,
 		TaskWorkerMap: taskWorkerMap,
+		LastCleanupTime: time.Now(),
 	}
-}
+	manager.StartBackgroundCleanup()
+	return manager
+	}
+
 // Get task from db
 func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 	m.mu.Lock()
@@ -63,10 +78,51 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 func (m *Manager)  AddTask(task *task.Task) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	//adds task to manager
 	m.PendingTasks.Enqueue(task)
+	log.Printf("Added task %v to pending queue. Queue size: %d", task.ID, m.PendingTasks.Len())
 }
+const (
+	CLEANUP_INTERVAL      = 1 * time.Hour
+	TASK_RETENTION_HOURS = 24
+)
+func(m *Manager) StartBackgroundCleanup(){
+	go func ()  {
+		ticker := time.NewTicker(CLEANUP_INTERVAL)
+		for range ticker.C{
+			log.Printf("Starting background cleanuo")
+			m.CleanUpTasks()
+			log.Printf("Background clean up completed")
+		}
+	}()
+}
+func (m *Manager) CleanUpTasks() {
+	cutoff := time.Now().Add(-TASK_RETENTION_HOURS * time.Hour)
+	log.Printf("Cleaning up tasks completed before %v", cutoff)
+
+	for id, t := range m.TaskDb {
+		if t.State == task.Completed && t.StartTime.Before(cutoff) {
+			log.Printf("Removing completed task %s from db", t.ID)
+			// remove from TaskWorkerMap
+			if worker, ok := m.TaskWorkerMap[id]; ok {
+				// remove from WorkersTaskMap
+				taskIDs := m.WorkersTaskMap[worker]
+				for i, taskID := range taskIDs {
+					if taskID == id {
+						m.WorkersTaskMap[worker] = append(taskIDs[:i], taskIDs[i+1:]...)
+						break
+					}
+				}
+				delete(m.TaskWorkerMap, id)
+			}
+			// remove from EventDb
+			delete(m.EventDb, id)
+			// remove from TaskDb
+			delete(m.TaskDb, id)
+		}
+	}
+}
+
 
 
 func (m *Manager) SelectWorker() (string, error) {
@@ -114,7 +170,7 @@ func (m *Manager) updateTasks() error {
 		work := w
 		go func() {
 			defer wg.Done()
-			url := fmt.Sprintf("http://%s/tasks", work)
+			url := fmt.Sprintf("http://%s/tasks?page=1&limit=10000", work)
 
 			resp, err := http.Get(url)
 			if err != nil {
@@ -136,18 +192,17 @@ func (m *Manager) updateTasks() error {
 				errCh <- fmt.Errorf("error response from worker %s: status %d", work, resp.StatusCode)
 				return
 			}
-
-			var recv_tasks []*task.Task
-			recv_err := decoder.Decode(&recv_tasks)
+			var paginatedResp PaginatedTaskResponse
+			recv_err := decoder.Decode(&paginatedResp)
 			if recv_err != nil {
-				log.Printf("Could not decode list of tasks from %s: %v\n", work, recv_err)
+				log.Printf("Could not decode paginated response of tasks from %s: %v\n", work, recv_err)
 				errCh <- fmt.Errorf("could not decode list of tasks from %s: %w", work, recv_err)
 				return
 			}
 
 			m.mu.Lock()
 			defer m.mu.Unlock()
-			for _, workerTask := range recv_tasks {
+			for _, workerTask := range paginatedResp.Tasks {
 				// The logic from UpdateTaskState is now here, inside the lock.
 				if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
 					if managerTask.State != workerTask.State {
