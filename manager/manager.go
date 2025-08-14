@@ -42,6 +42,7 @@ type PaginatedTaskResponse struct {
 }
 var httpClient = &http.Client{
     Timeout: 30 * time.Second,
+    
 }
 
 
@@ -292,13 +293,25 @@ func (m *Manager) SendWork() {
 		m.AddTask(t)
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
 	url := fmt.Sprintf("http://%s/tasks", w)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		m.mu.Lock()
+		m.AddTask(t)
+		m.mu.Unlock()
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("Error connecting to %v: %v", w, err)
 		m.mu.Lock()
-		m.PendingTasks.Enqueue(t)
+		m.AddTask(t)
 		m.mu.Unlock()
 		return
 	}
