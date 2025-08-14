@@ -24,7 +24,7 @@ type Manager struct {
 	TaskWorkerMap  map[uuid.UUID]string
 	lastWorker     int //track last worker to send task to
 	LastCleanupTime time.Time
-	mu         sync.Mutex 
+	mu         sync.RWMutex 
 	
 }
 
@@ -63,8 +63,8 @@ func New(workers []string) *Manager {
 
 // Get task from db
 func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	task, exists := m.TaskDb[id]
 	if !exists {
 		log.Printf("Task does not exist.")
@@ -97,6 +97,8 @@ func(m *Manager) StartBackgroundCleanup(){
 	}()
 }
 func (m *Manager) CleanUpTasks() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	cutoff := time.Now().Add(-TASK_RETENTION_HOURS * time.Hour)
 	log.Printf("Cleaning up tasks completed before %v", cutoff)
 
@@ -158,10 +160,10 @@ func (m *Manager) ProcessTasks() {
 func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
 
-	m.mu.Lock()
+	m.mu.RLock()
 	workers := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(workers))
 
@@ -280,7 +282,9 @@ func (m *Manager) SendWork() {
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Error connecting to %v: %v", w, err)
+		m.mu.Lock()
 		m.PendingTasks.Enqueue(t)
+		m.mu.Unlock()
 		return
 	}
 	defer resp.Body.Close()  //must always close resp body. 
@@ -311,6 +315,8 @@ func (m *Manager) SendWork() {
 }
 
 func (m *Manager) GetTasks() []*task.Task {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
     tasks := []*task.Task{}
     for _, t := range m.TaskDb {
         tasks = append(tasks, t)
