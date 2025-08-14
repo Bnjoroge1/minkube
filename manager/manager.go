@@ -42,6 +42,15 @@ type PaginatedTaskResponse struct {
 }
 var httpClient = &http.Client{
     Timeout: 30 * time.Second,
+    Transport: &http.Transport{
+	MaxIdleConns: 100,  //max number of idle connections across all hosts
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout: 90*time.Second,
+	DisableKeepAlives: false,  //enable conenction reuse. 
+	ForceAttemptHTTP2: true,  //use HTTP2 if available
+
+    },
+
     
 }
 
