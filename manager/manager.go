@@ -8,6 +8,7 @@ import (
 	"log"
 	"minkube/task"
 	"minkube/worker"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -48,6 +49,12 @@ var httpClient = &http.Client{
 	IdleConnTimeout: 90*time.Second,
 	DisableKeepAlives: false,  //enable conenction reuse. 
 	ForceAttemptHTTP2: true,  //use HTTP2 if available
+	// Add connection tracing
+     DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+            log.Printf("Creating NEW connection to %s", addr)
+            dialer := &net.Dialer{Timeout: 5 * time.Second}
+            return dialer.DialContext(ctx, network, addr)
+        },
     },
 }
 
