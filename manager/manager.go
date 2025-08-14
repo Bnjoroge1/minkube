@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -39,6 +40,11 @@ type PaginatedTaskResponse struct {
         HasPrev    bool `json:"has_prev"`
     } `json:"pagination"`
 }
+var httpClient = &http.Client{
+    Timeout: 30 * time.Second,
+}
+
+
 func New(workers []string) *Manager {
 	taskDB := make(map[uuid.UUID]*task.Task)
 	eventDB := make(map[uuid.UUID]*task.TaskEvent)
@@ -160,7 +166,7 @@ func (m *Manager) ProcessTasks() {
 func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
 
-	m.mu.RLock()
+	m.mu.RLock() //read-heavy lock
 	workers := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
 	m.mu.RUnlock()
@@ -172,12 +178,21 @@ func (m *Manager) updateTasks() error {
 		work := w
 		go func() {
 			defer wg.Done()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
 			url := fmt.Sprintf("http://%s/tasks?page=1&limit=10000", work)
 
-			resp, err := http.Get(url)
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 			if err != nil {
 				log.Printf("Error retrieving tasks for this worker %s: %v", work, err)
 				errCh <- fmt.Errorf("error retrieving tasks for worker %s: %w", work, err)
+				return
+			}
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				log.Printf("Error receiving tasks for worker %s:%v\n",work,  err)
 				return
 			}
 			defer resp.Body.Close()

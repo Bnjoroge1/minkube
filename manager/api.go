@@ -2,10 +2,12 @@ package manager
 
 import (
 	"fmt"
-	"net/http"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
+	"time"
+
 	"github.com/go-chi/chi/v5"
-	  _ "net/http/pprof"
 )
 
 
@@ -33,8 +35,23 @@ func (a *Api) initRouter() {
 
 func (a *Api) Start() {
 	a.initRouter()
-	
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+	// Create a server with various timeout settings
+	addr := fmt.Sprintf("%s:%d", a.Address, a.Port)
+	server := &http.Server{
+		Addr: addr,
+		// Maximum duration for reading the entire request
+		ReadTimeout: 5 * time.Second,
+		// Maximum duration for writing the response
+		WriteTimeout: 10 * time.Second,
+		// Maximum duration for reading the request headers
+		ReadHeaderTimeout: 2 * time.Second,
+		// Maximum amount of time to wait for the next request when keep-alives are enabled
+		IdleTimeout: 120 * time.Second,
+		// Handler to use for incoming requests
+		Handler: a.Router,
+	}
+	log.Printf("Starting server on address:port, %s", addr)
+	err := server.ListenAndServe()
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
