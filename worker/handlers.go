@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"minkube/task"
@@ -63,14 +64,70 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	//set the header to json
 	a.Worker.mu.Lock()
 	defer a.Worker.mu.Unlock()
+	//parameters for pagination
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page := 1
+	limit := 100
+	//parse pageStr
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	//parse limit
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr);err == nil && l > 0 && limit <= 1000 {
+			limit = l
+		}
+	}
+
 
 	tasks := make([]*task.Task, 0, len(a.Worker.TaskIds))
 	for _, task := range a.Worker.TaskIds {
 		tasks = append(tasks, task)
 	}
+	//get the pagination
+	totalTasks := len(tasks)
+	totalPages := (totalTasks + limit - 1) / limit
+
+	//start and end indices
+	start := (page - 1) * limit 
+	end := start + limit
+
+	if start  >= totalTasks {
+		start = totalTasks
+		end = totalTasks
+	} else if end > totalTasks {
+		end = totalTasks
+	}
+
+	//get the slice for this page
+	var pagedTasks[]*task.Task
+	if start < end {
+		pagedTasks = tasks[start:end]
+	} else {
+		pagedTasks = []*task.Task{} //empty slice
+	}
+
+	response := map[string]interface{} {
+		"tasks":       pagedTasks,
+		"pagination": map[string]interface{}{
+            "page":        page,
+            "limit":       limit,
+            "total_tasks": totalTasks,
+            "total_pages": totalPages,
+            "has_next":    page < totalPages,
+            "has_prev":    page > 1,
+        },
+	}
+	
+	
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(a.Worker.GetTasks())
+	json.NewEncoder(w).Encode(response)
 }
 
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {

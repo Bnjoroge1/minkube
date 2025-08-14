@@ -114,6 +114,7 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 		return DockerResult{Error: err}
 	}
 	io.Copy(os.Stdout, reader)
+	
 
 	//get config info
 	rp := container.RestartPolicy{

@@ -3,8 +3,11 @@ package manager
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	"minkube/task"
 
@@ -18,14 +21,30 @@ type ErrResponse struct {
 	Message        string `json:"message"`
 }
 
+const (
+    MAX_TASKS = 10000
+    TASK_RETENTION_HOURS = 24 // Keep tasks for 24 hours
+    CLEANUP_INTERVAL = 1 * time.Hour // Clean up every hour
+)
+var bytesPool = sync.Pool{
+		New: func() interface{}{
+		return make([]byte, 0, 1024)
+	},
+} //create a pool of decoders to be reused to avoid repeated allocation of reflection metadata
 
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
-    d := json.NewDecoder(r.Body)                                          
-    d.DisallowUnknownFields()
- 
-    te := task.TaskEvent{}
-    err := d.Decode(&te)                                                  
-    if err != nil {                                                       
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024) //adding 10KB limit for max bytes per request
+
+	buf := bytesPool.Get().([]byte)
+	defer func () {
+		buf = buf[:0]
+		bytesPool.Put(buf)
+	}()
+
+
+	body, err := io.ReadAll(r.Body)
+                               
+    if err != nil{                                                       
         msg := fmt.Sprintf("Error unmarshalling body: %v\n", err)
         log.Printf(msg)
         w.WriteHeader(400)
@@ -36,11 +55,24 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
         json.NewEncoder(w).Encode(e)
         return
     }
- 
-    a.Manager.AddTask(&te.Task)                                                 
-    log.Printf("Added task %v\n", te.Task.ID)
-    w.WriteHeader(201)                                                    
-    json.NewEncoder(w).Encode(te.Task)                                    
+	te := task.TaskEvent{}
+	err = json.Unmarshal(body, &te)
+	if err != nil {
+		msg := fmt.Sprintf("Error unmarshalling body: %v\n", err)
+		log.Printf(msg)
+		w.WriteHeader(400)
+		e := ErrResponse{
+			HTTPStatusCode : 400,
+			Message: msg,
+		}
+		json.NewEncoder(w).Encode(e)
+		return 
+	}
+	te.Task.StartTime = time.Now()
+	a.Manager.AddTask(&te.Task)
+	log.Printf("Added task %v\n", te.Task.ID)
+	w.WriteHeader(201)
+	json.NewEncoder(w).Encode(te.Task)
 }
 
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
