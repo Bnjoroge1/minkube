@@ -133,6 +133,10 @@ func (a *Api) loadAPIKeys() {
     // For now, hardcode some test keys - replace with config file loading later
     a.APIConfig = APIkeysConfig{
         APIKeys: map[string]APIKeyInfo{
+		  "mk_manager_internal" : {
+			Permissions: []string{"admin:*"},
+			Description: "Manager API key",
+		  },
             "mk_admin_xyz789": {
                 Permissions: []string{"admin:*"},
                 Description: "Admin access key",

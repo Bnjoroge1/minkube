@@ -37,6 +37,7 @@ type PaginationMetadata struct {
 	HasNext    bool `json:"has_next"`
 	HasPrev    bool `json:"has_prev"`
 } 
+const MANAGER_API_KEY = "mk_manager_internal"
 
 type PaginatedTaskResponse struct {
     Tasks      []*task.Task `json:"tasks"`
@@ -187,7 +188,9 @@ func (m *Manager) updateTasks() error {
 	workers := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
 	m.mu.RUnlock()
+
 	log.Printf("Manager state: TaskDb=%d tasks, PendingTasks=%d", len(m.TaskDb),m.PendingTasks.Len())
+
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(workers))
@@ -208,6 +211,8 @@ func (m *Manager) updateTasks() error {
 				errCh <- fmt.Errorf("error retrieving tasks for worker %s: %w", work, err)
 				return
 			}
+			req.Header.Set("Authorization", "Bearer "+MANAGER_API_KEY)
+
 			
 			resp, err := httpClient.Do(req)
 			if err != nil {
@@ -223,7 +228,7 @@ func (m *Manager) updateTasks() error {
 				resp_err := worker.ErrResponse{}
 				dec_err := decoder.Decode(&resp_err)
 				if dec_err != nil {
-					log.Printf("Error decoding the error response: %s", dec_err.Error())
+					log.Printf("Error decoding the error response: %s", resp_err.Message)
 				}
 				errCh <- fmt.Errorf("error response from worker %s: status %d", work, resp.StatusCode)
 				return
@@ -239,6 +244,8 @@ func (m *Manager) updateTasks() error {
 
 
 			m.mu.Lock()
+			updatedCount := 0
+			orphanedCount := 0
 			for i, workerTask := range paginatedResp.Tasks {
 				if i < 3 {
 					log.Printf("Task %d: ID=%s, State-%v, Name=%s",i,  workerTask.ID, workerTask.State, workerTask.Name)
@@ -257,10 +264,38 @@ func (m *Manager) updateTasks() error {
 				}else{
 					log.Printf("Task %s exists on worker %s but not in manager TaskDB", workerTask.ID, work)
 					log.Printf("Worker task state: %v, Manager TaskDb size: %d", workerTask.State, len(m.TaskDb))
+					 // CRITICAL FIX: Handle orphaned tasks by adding them back to manager
+                    log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb", 
+                        workerTask.ID, work)
+                    
+                    // Create a copy of the worker task and add to manager state
+                    taskCopy := *workerTask
+                    m.TaskDb[workerTask.ID] = &taskCopy
+                    m.TaskWorkerMap[workerTask.ID] = work
+                    
+                    // Add to worker's task list if not already there
+                    found := false
+                    for _, existingID := range m.WorkersTaskMap[work] {
+                        if existingID == workerTask.ID {
+                            found = true
+                            break
+                        }
+                    }
+                    if !found {
+                        m.WorkersTaskMap[work] = append(m.WorkersTaskMap[work], workerTask.ID)
+                    }
+                    
+                    orphanedCount++
+                    log.Printf("Added orphaned task %s to manager state", workerTask.ID)
+                }
 
 				}
-			}
+		
 			m.mu.Unlock()
+			if updatedCount > 0 || orphanedCount > 0 {
+                log.Printf("Worker %s: updated %d tasks, recovered %d orphaned tasks", 
+                    work, updatedCount, orphanedCount)
+            }
 		}()
 	}
 	wg.Wait()

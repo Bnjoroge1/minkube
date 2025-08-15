@@ -43,7 +43,7 @@ func(w *Worker) RunTasks() {
 			result, task := w.runTask()
 			if result.Error != nil {
 				log.Printf("Error running task: %v\n", result.Error)
-				return 
+				 
 			}
 			if task != nil {
 				log.Printf("Task %v is with state %v\n", task.ID, task.State)
