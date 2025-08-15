@@ -29,17 +29,18 @@ type Manager struct {
 	mu         sync.RWMutex 
 	
 }
+type PaginationMetadata struct {
+	Page       int `json:"page"`
+	Limit      int `json:"limit"`
+	TotalTasks int `json:"total_tasks"`
+	TotalPages int `json:"total_pages"`
+	HasNext    bool `json:"has_next"`
+	HasPrev    bool `json:"has_prev"`
+} 
 
 type PaginatedTaskResponse struct {
     Tasks      []*task.Task `json:"tasks"`
-    Pagination struct {
-        Page       int `json:"page"`
-        Limit      int `json:"limit"`
-        TotalTasks int `json:"total_tasks"`
-        TotalPages int `json:"total_pages"`
-        HasNext    bool `json:"has_next"`
-        HasPrev    bool `json:"has_prev"`
-    } `json:"pagination"`
+    PaginationMetadata PaginationMetadata `json:"pagination_metadata"`
 }
 var httpClient = &http.Client{
     Timeout: 30 * time.Second,
@@ -111,7 +112,7 @@ func(m *Manager) StartBackgroundCleanup(){
 		ticker := time.NewTicker(CLEANUP_INTERVAL)
 		for range ticker.C{
 			log.Printf("Starting background cleanuo")
-			m.CleanUpTasks()
+			//m.CleanUpTasks()
 			log.Printf("Background clean up completed")
 		}
 	}()
@@ -179,13 +180,15 @@ func (m *Manager) ProcessTasks() {
 // updates the status of tasks
 func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	m.mu.RLock() //read-heavy lock
 	workers := make([]string, len(m.Workers))
 	copy(workers, m.Workers)
 	m.mu.RUnlock()
+	log.Printf("Manager state: TaskDb=%d tasks, PendingTasks=%d", len(m.TaskDb),m.PendingTasks.Len())
+
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(workers))
 
@@ -197,7 +200,7 @@ func (m *Manager) updateTasks() error {
 
 			
 
-			url := fmt.Sprintf("http://%s/tasks?page=1&limit=10000", work)
+			url := fmt.Sprintf("http://%s/tasks?page=1&limit=1000", work)
 
 			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 			if err != nil {
@@ -232,11 +235,16 @@ func (m *Manager) updateTasks() error {
 				errCh <- fmt.Errorf("could not decode list of tasks from %s: %w", work, recv_err)
 				return
 			}
+			log.Printf("Received %d tasks from worker %s", len(paginatedResp.Tasks), work)
+
 
 			m.mu.Lock()
-			defer m.mu.Unlock()
-			for _, workerTask := range paginatedResp.Tasks {
+			for i, workerTask := range paginatedResp.Tasks {
+				if i < 3 {
+					log.Printf("Task %d: ID=%s, State-%v, Name=%s",i,  workerTask.ID, workerTask.State, workerTask.Name)
+				}
 				// The logic from UpdateTaskState is now here, inside the lock.
+				log.Printf("Manager task State: %v, WorkerTask State: %v", m.TaskDb[workerTask.ID], workerTask.State)
 				if managerTask, ok := m.TaskDb[workerTask.ID]; ok {
 					if managerTask.State != workerTask.State {
 						log.Printf("Updating task %s state from %v to %v",
@@ -246,8 +254,13 @@ func (m *Manager) updateTasks() error {
 						managerTask.StartTime = workerTask.StartTime
 						managerTask.EndTime = workerTask.EndTime
 					}
+				}else{
+					log.Printf("Task %s exists on worker %s but not in manager TaskDB", workerTask.ID, work)
+					log.Printf("Worker task state: %v, Manager TaskDb size: %d", workerTask.State, len(m.TaskDb))
+
 				}
 			}
+			m.mu.Unlock()
 		}()
 	}
 	wg.Wait()
@@ -354,6 +367,7 @@ func (m *Manager) SendWork() {
 	m.WorkersTaskMap[w] = append(m.WorkersTaskMap[w], t.ID)
 	m.TaskWorkerMap[t.ID] = w
 	m.TaskDb[t.ID] = t
+	log.Printf("Successfully added task %v to eventDB, and the task maps.", t.ID)
 	
 }
 

@@ -68,51 +68,37 @@ WORKER_HOST ?= localhost
 # Run worker with configurable port
 .PHONY: run-worker
 run-worker:
-    MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) MINKUBE_ROLE=worker $(GOCMD) run main.go
 
 # Convenience targets for multiple workers
 .PHONY: run-worker1 run-worker2 run-worker3
 run-worker1:
-    MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go
 
 run-worker2:
-    MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go
 
 run-worker3:
-    MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go
 
-# Run multiple workers in background (for testing)
-.PHONY: run-workers-dev
-run-workers-dev:
-	@echo "Starting 3 workers in background..."
-	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	@echo "Workers started on ports 8001, 8002, 8003"
-
-# Stop background workers
-.PHONY: stop-workers
-stop-workers:
-	@echo "Stopping workers..."
-	pkill -f "MINKUBE_ROLE=worker" || true
-	@echo "Workers stopped"
-
+# Run manager with single worker
 .PHONY: run-manager
 run-manager:
-	MINKUBE_WORKERS=localhost:8000 MINKUBE_ROLE=manager $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8000 $(GOCMD) run main.go
 
+# Run manager with multiple workers
 .PHONY: run-manager-multi
 run-manager-multi:
-	MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 MINKUBE_ROLE=manager $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
 
 # Run with custom environment
 .PHONY: run-dev
 run-dev:
-    MINKUBE_HOST=localhost MINKUBE_PORT=9000 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=9000 $(GOCMD) run main.go
 
 .PHONY: run-prod
 run-prod:
-    MINKUBE_HOST=0.0.0.0 MINKUBE_PORT=8080 $(GOCMD) run main.go
+	MINKUBE_HOST=0.0.0.0 MINKUBE_PORT=8080 $(GOCMD) run main.go
 
 # Development helpers
 .PHONY: fmt
@@ -202,3 +188,35 @@ help:
 	@echo "  prod          - Production workflow (clean, deps, test, build-all)"
 	@echo "  install-tools - Install development tools"
 	@echo "  help          - Show this help message"
+
+
+
+# Start multiple workers in background for development
+.PHONY: run-workers-dev
+run-workers-dev:
+	@echo "Starting workers in background..."
+	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go &
+	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go &
+	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go &
+	@echo "Workers started on ports 8001, 8002, 8003"
+
+# Stop background workers
+.PHONY: stop-workers
+stop-workers:
+	@echo "Stopping workers..."
+	@pkill -f "MINKUBE_ROLE=worker" || echo "No workers to stop"
+
+# Debug targets for troubleshooting
+.PHONY: debug-manager debug-worker debug-tasks
+debug-manager:
+	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
+
+debug-worker:
+	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) MINKUBE_ROLE=worker $(GOCMD) run main.go
+
+debug-tasks:
+	@echo "Checking task states and worker health..."
+	@curl -s http://localhost:9000/tasks 2>/dev/null | jq '.' || echo "Manager not responding on :9000"
+	@curl -s http://localhost:8001/health 2>/dev/null | jq '.' || echo "Worker 8001 not responding"
+	@curl -s http://localhost:8002/health 2>/dev/null | jq '.' || echo "Worker 8002 not responding"
+	@curl -s http://localhost:8003/health 2>/dev/null | jq '.' || echo "Worker 8003 not responding"

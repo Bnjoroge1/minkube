@@ -32,6 +32,20 @@ type Task struct {
 	HealthCheck string
 	RestartCount int
 }
+// Add this for the complete request from client
+type StartTaskEventRequest struct {
+    Task StartTaskRequest `json:"task"`
+    // No ID, State, or Timestamp - server generates these
+}
+type StartTaskRequest struct {
+    Name           string            `json:"name"`
+    Image          string            `json:"image"`
+    Memory         int               `json:"memory"`
+    Disk           int               `json:"disk"`
+    RestartPolicy  string            `json:"restartPolicy"`
+    PortBindings   map[string]string `json:"portBindings,omitempty"`
+    // Only fields the client should/can provide
+}
 type DockerInspectResponse struct {
 	Error error
 	Container *types.ContainerJSON
