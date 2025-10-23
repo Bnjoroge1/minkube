@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minkube Management UI</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🐳 Minkube Manager</h1>
+            <p class="subtitle">Distributed Container Orchestration</p>
+        </header>
+
+        <!-- Workers Section -->
+        <section class="card">
+            <h2>Worker Management</h2>
+            <div class="worker-controls">
+                <div class="input-group">
+                    <label for="workerPort">Port:</label>
+                    <input type="number" id="workerPort" value="8001" min="8001" max="9000">
+                </div>
+                <button onclick="startWorker()" class="btn btn-primary">Start Worker</button>
+                <button onclick="stopWorker()" class="btn btn-danger">Stop Worker</button>
+            </div>
+            <div id="workersList" class="workers-list"></div>
+        </section>
+
+        <!-- Task Submission Section -->
+        <section class="card">
+            <h2>Submit Task</h2>
+            <form id="taskForm" onsubmit="submitTask(event)">
+                <div class="form-group">
+                    <label for="taskName">Task Name:</label>
+                    <input type="text" id="taskName" required placeholder="my-task">
+                </div>
+                <div class="form-group">
+                    <label for="taskImage">Docker Image:</label>
+                    <input type="text" id="taskImage" required placeholder="nginx:latest">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="taskMemory">Memory (MB):</label>
+                        <input type="number" id="taskMemory" value="128" min="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="taskDisk">Disk (GB):</label>
+                        <input type="number" id="taskDisk" value="1" min="1">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="apiKey">API Key:</label>
+                    <input type="text" id="apiKey" placeholder="mk_admin_xyz789" value="mk_admin_xyz789">
+                </div>
+                <button type="submit" class="btn btn-success">Submit Task</button>
+            </form>
+        </section>
+
+        <!-- Tasks List Section -->
+        <section class="card">
+            <h2>Active Tasks</h2>
+            <div class="controls-row">
+                <button onclick="refreshTasks()" class="btn btn-secondary">Refresh</button>
+                <div class="pagination-controls">
+                    <button onclick="previousPage()" class="btn btn-sm">← Prev</button>
+                    <span id="pageInfo">Page 1</span>
+                    <button onclick="nextPage()" class="btn btn-sm">Next →</button>
+                </div>
+            </div>
+            <div id="tasksList" class="tasks-list"></div>
+        </section>
+
+        <!-- System Status Section -->
+        <section class="card">
+            <h2>System Status</h2>
+            <div id="systemStatus" class="status-grid"></div>
+        </section>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="app.js?v=2"></script>
+</body>
+
+</html>

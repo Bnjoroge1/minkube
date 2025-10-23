@@ -10,6 +10,7 @@ import (
 	"minkube/worker"
 	"net"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 type Manager struct {
 	PendingTasks        queue.Queue
 	TaskDb         map[uuid.UUID]*task.Task
+	SortedTasks    []*task.Task
 	EventDb        map[uuid.UUID]*task.TaskEvent
 	Workers        []string
 	WorkersTaskMap map[string][]uuid.UUID //maps worker to task itself
@@ -97,12 +99,44 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 
 //update task in db
 
-func (m *Manager)  AddTask(task *task.Task) {
+func (m *Manager)  AddTask(t *task.Task) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	//adds task to manager
-	m.PendingTasks.Enqueue(task)
-	log.Printf("Added task %v to pending queue. Queue size: %d", task.ID, m.PendingTasks.Len())
+	m.PendingTasks.Enqueue(t)
+	m.TaskDb[t.ID] = t
+	if m.SortedTasks == nil{
+		m.SortedTasks = make([]*task.Task, 0)
+	}
+
+	existingIndex := m.findTaskInSortedList(t.ID)
+	if existingIndex >= 0 {
+		m.SortedTasks[existingIndex] = t
+		log.Printf("Updated existing task %s in SortedTasks at index %d", t.ID, existingIndex)
+	} else {
+		m.SortedTasks = m.InsertSorted(m.SortedTasks, t)
+		log.Printf("Inserted new task %s into Sorted Tasks, total count: %d", t.ID, len(m.SortedTasks))
+	}
+	log.Printf("Added task %v to pending queue. Queue size: %d", t.ID, m.PendingTasks.Len())
+}
+func (m *Manager) findTaskInSortedList(taskID uuid.UUID) int {
+    for i, task := range m.SortedTasks {
+        if task != nil && task.ID == taskID {
+            return i
+        }
+    }
+    return -1
+}
+
+func (m *Manager) InsertSorted(tasks []*task.Task, newTask *task.Task)[]*task.Task{
+	index := sort.Search(len(tasks), func(i int)bool {
+		return tasks[i].StartTime.After(newTask.StartTime)
+	})
+	tasks = append(tasks, nil)
+	copy(tasks[index+1:], tasks[index:])
+	tasks[index] = newTask
+
+	return tasks
 }
 const (
 	CLEANUP_INTERVAL      = 1 * time.Hour
@@ -264,7 +298,7 @@ func (m *Manager) updateTasks() error {
 				}else{
 					log.Printf("Task %s exists on worker %s but not in manager TaskDB", workerTask.ID, work)
 					log.Printf("Worker task state: %v, Manager TaskDb size: %d", workerTask.State, len(m.TaskDb))
-					 // CRITICAL FIX: Handle orphaned tasks by adding them back to manager
+					 
                     log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb", 
                         workerTask.ID, work)
                     
@@ -272,6 +306,12 @@ func (m *Manager) updateTasks() error {
                     taskCopy := *workerTask
                     m.TaskDb[workerTask.ID] = &taskCopy
                     m.TaskWorkerMap[workerTask.ID] = work
+
+				if m.SortedTasks == nil{
+					m.SortedTasks = make([]*task.Task, 0)
+				}
+				m.SortedTasks = m.InsertSorted(m.SortedTasks, &taskCopy)
+				log.Printf("Added orphaned task %s to Sorted Task list", &taskCopy.ID)
                     
                     // Add to worker's task list if not already there
                     found := false
@@ -343,12 +383,21 @@ func (m *Manager) SendWork() {
 
 	t.State = task.Scheduled
 	//create a task event
+
+	// The TaskEvent is created as before.
 	te := task.TaskEvent{
-		ID: uuid.New(),
-		State: t.State,
+		ID:        uuid.New(),
+		State:     t.State,
 		Timestamp: time.Now().UTC(),
-		Task: *t,  //send a copy of task to the task event.
+		Task:      *t,
 	}
+
+	// A derived context for the HTTP request can be created from the parent.
+	// This is useful if you want a different timeout or cancellation for the request
+	// without affecting the parent context. For this example, we'll use the parent directly,
+	// but this is how you would create a derived one:
+	// httpCtx, httpCancel := context.WithTimeout(parentCtx, 25*time.Second)
+	//
 
 	data, err := json.Marshal(&te)
 	if err != nil {
@@ -356,7 +405,7 @@ func (m *Manager) SendWork() {
 		m.AddTask(t)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	url := fmt.Sprintf("http://%s/tasks", w)

@@ -84,12 +84,28 @@ run-worker3:
 # Run manager with single worker
 .PHONY: run-manager
 run-manager:
-	MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8000 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8080 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8000 $(GOCMD) run main.go
 
 # Run manager with multiple workers
 .PHONY: run-manager-multi
 run-manager-multi:
-	MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8080 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
+
+# Open web UI in browser
+.PHONY: open-ui
+open-ui:
+	@echo "Opening Minkube Web UI..."
+	@open http://localhost:8080 || xdg-open http://localhost:8080 || echo "Please open http://localhost:8080 in your browser"
+
+# Start full development environment (manager + workers + open UI)
+.PHONY: start-dev
+start-dev: run-workers-dev
+	@echo "Waiting for workers to start..."
+	@sleep 2
+	@echo "Starting manager..."
+	@$(MAKE) run-manager-multi &
+	@sleep 2
+	@$(MAKE) open-ui
 
 # Run with custom environment
 .PHONY: run-dev
@@ -173,6 +189,8 @@ help:
 	@echo "  stop-workers  - Stop all background workers"
 	@echo "  run-manager   - Run manager with single worker (localhost:8000)"
 	@echo "  run-manager-multi - Run manager with multiple workers (8001-8003)"
+	@echo "  open-ui       - Open the web UI in your browser"
+	@echo "  start-dev     - Start full dev environment (workers + manager + UI)"
 	@echo "  run-dev       - Run in development mode"
 	@echo "  run-prod      - Run in production mode"
 	@echo "  clean         - Clean build artifacts"
