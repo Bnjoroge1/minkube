@@ -176,7 +176,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	//set the header to json
 	a.Manager.mu.RLock()
 	defer a.Manager.mu.RUnlock()
-	taskCount := len(a.Manager.TaskDb)
+	taskCount := len(a.Manager.SortedTasks)
 	start := (page - 1) * limit
 	end := min(start+limit, taskCount)
 
@@ -266,6 +266,6 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	a.Manager.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
-	w.WriteHeader(http.StatusNoContent) //successfully stopped the task.
+	writeSuccessResponse(w, http.StatusNoContent, fmt.Sprintf("Successfully stopped Task %s", taskToStop.ID))
 
 }
