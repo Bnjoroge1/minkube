@@ -488,7 +488,7 @@ func (m *Manager) HealthCheckWorkers(){
 		go func(worker string){
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			url := fmt.Sprintf("http://%s/healthz", worker)
+			url := fmt.Sprintf("http://%s/health", worker)
 			req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 			resp, err := httpClient.Do(req)
 			if err != nil{
