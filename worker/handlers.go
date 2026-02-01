@@ -166,3 +166,8 @@ func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(a.Worker.Stats)
 }
+
+func (a *Api) HealthHandler(w http.ResponseWriter, r *http.Request){
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "up"})
+}

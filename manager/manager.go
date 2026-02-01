@@ -25,6 +25,7 @@ type Manager struct {
 	EventDb        map[uuid.UUID]*task.TaskEvent
 	Workers        []string
 	WorkersTaskMap map[string][]uuid.UUID //maps worker to task itself
+	WorkerHealth map[string]bool
 	TaskWorkerMap  map[uuid.UUID]string
 	lastWorker     int //track last worker to send task to
 	LastCleanupTime time.Time
@@ -129,6 +130,7 @@ func (m *Manager) findTaskInSortedList(taskID uuid.UUID) int {
 }
 
 func (m *Manager) InsertSorted(tasks []*task.Task, newTask *task.Task)[]*task.Task{
+	//sort bys tart time because of 1) pagination becomes easier. allows me to fetch the latest 10 tasks or next ten tasks, also easier to display to some UI or dashboard. much easier to also do time range queries like before x and after y. also, go maps specifically dont maintain stable ordering i.e if i make a request to the map, and male another request, i might get differnt tasks list. 
 	index := sort.Search(len(tasks), func(i int)bool {
 		return tasks[i].StartTime.After(newTask.StartTime)
 	})
@@ -353,7 +355,7 @@ func (m *Manager) updateTasks() error {
 	return nil
 }
 
-// sends tasks to workers
+// sends tasks to worker
 func (m *Manager) SendWork() {
 	log.Printf("Sending tasks to workers")
 	m.mu.Lock()
@@ -463,4 +465,40 @@ func (m *Manager) GetTasks() []*task.Task {
         tasks = append(tasks, t)
     }
     return tasks
+}
+func (m *Manager) MarkWorkerDown(worker string){
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.WorkerHealth[worker] = false
+	log.Printf("worer %w marked as DOWN", worker)
+}
+func (m *Manager) MarkWorkerUp(worker string){
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.WorkerHealth[worker] = true
+	log.Printf("worer %w marked as UP", worker)
+}
+func (m *Manager) IsWorkerHealthy(worker string) bool{
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.WorkerHealth[worker]
+}
+func (m *Manager) HealthCheckWorkers(){
+	for _, w := range m.Workers{
+		go func(worker string){
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			url := fmt.Sprintf("http://%s/healthz", worker)
+			req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+			resp, err := httpClient.Do(req)
+			if err != nil{
+				log.Printf("Worker %s is DOWN: %v ", worker, err)
+				m.MarkWorkerDown(worker)
+			}else {
+				resp.Body.Close()
+				log.Printf("Worker %s is UP", worker)
+				m.MarkWorkerUp(worker)
+			}
+		}(w)
+	}
 }

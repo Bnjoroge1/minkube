@@ -15,6 +15,7 @@ type Api struct {
 	Router  *chi.Mux //Mux is basically a multiplexer or request router.
 }
 
+
 func (a *Api) initRouter() {
 	a.Router = chi.NewRouter()
 	log.Printf("initializing router")
