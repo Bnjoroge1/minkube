@@ -298,38 +298,39 @@ func (m *Manager) updateTasks() error {
 						managerTask.EndTime = workerTask.EndTime
 					}
 				}else{
+
 					log.Printf("Task %s exists on worker %s but not in manager TaskDB", workerTask.ID, work)
 					log.Printf("Worker task state: %v, Manager TaskDb size: %d", workerTask.State, len(m.TaskDb))
 					 
-                    log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb", 
+					log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb", 
                         workerTask.ID, work)
                     
-                    // Create a copy of the worker task and add to manager state
-                    taskCopy := *workerTask
-                    m.TaskDb[workerTask.ID] = &taskCopy
-                    m.TaskWorkerMap[workerTask.ID] = work
+					// Create a copy of the worker task and add to manager state
+					taskCopy := *workerTask
+					m.TaskDb[workerTask.ID] = &taskCopy
+					m.TaskWorkerMap[workerTask.ID] = work
 
-				if m.SortedTasks == nil{
-					m.SortedTasks = make([]*task.Task, 0)
+					if m.SortedTasks == nil{
+						m.SortedTasks = make([]*task.Task, 0)
+					}
+					m.SortedTasks = m.InsertSorted(m.SortedTasks, &taskCopy)
+					log.Printf("Added orphaned task %s to Sorted Task list", &taskCopy.ID)
+					
+					// Add to worker's task list if not already there
+					found := false
+					for _, existingID := range m.WorkersTaskMap[work] {
+					if existingID == workerTask.ID {
+						found = true
+						break
+					}
+					}
+					if !found {
+					m.WorkersTaskMap[work] = append(m.WorkersTaskMap[work], workerTask.ID)
+					}
+					
+					orphanedCount++
+					log.Printf("Added orphaned task %s to manager state", workerTask.ID)
 				}
-				m.SortedTasks = m.InsertSorted(m.SortedTasks, &taskCopy)
-				log.Printf("Added orphaned task %s to Sorted Task list", &taskCopy.ID)
-                    
-                    // Add to worker's task list if not already there
-                    found := false
-                    for _, existingID := range m.WorkersTaskMap[work] {
-                        if existingID == workerTask.ID {
-                            found = true
-                            break
-                        }
-                    }
-                    if !found {
-                        m.WorkersTaskMap[work] = append(m.WorkersTaskMap[work], workerTask.ID)
-                    }
-                    
-                    orphanedCount++
-                    log.Printf("Added orphaned task %s to manager state", workerTask.ID)
-                }
 
 				}
 		
@@ -407,11 +408,12 @@ func (m *Manager) SendWork() {
 		m.AddTask(t)
 		return
 	}
+	correlationID := t.CorrelationID
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
-
 	url := fmt.Sprintf("http://%s/tasks", w)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(data))
+	req.Header.Set("X-Request-ID", correlationID)
 	if err != nil {
 		log.Printf("Error creating request: %v", err)
 		m.mu.Lock()
@@ -419,7 +421,8 @@ func (m *Manager) SendWork() {
 		m.mu.Unlock()
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
+	
+
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

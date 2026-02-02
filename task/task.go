@@ -18,6 +18,7 @@ import (
 type Task struct {
 	ID             uuid.UUID         `json:"id"`
 	ContainerID    string            `json:"containerID"`
+	CorrelationID  string            `json:"correlationID"`
 	Name           string            `json:"name"`
 	State          State             `json:"state"`
 	Image          string            `json:"image"`

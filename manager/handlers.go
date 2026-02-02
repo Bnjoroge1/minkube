@@ -31,6 +31,7 @@ var bytesPool = sync.Pool{
 
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024) //adding 10KB limit for max bytes per request
+	correlationID := r.Context().Value("correlation_id").(string)
 
 	buf := bytesPool.Get().([]byte)
 	defer func() {
@@ -118,6 +119,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	//create complete task with server-generated fields
 	fullTask := task.Task{
 		ID:             uuid.New(),
+		CorrelationID: correlationID,
 		Name:           taskRequestEvent.Task.Name,
 		Image:          taskRequestEvent.Task.Image,
 		Memory:         memoryInBytes,

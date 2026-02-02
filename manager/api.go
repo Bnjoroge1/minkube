@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 // bearerToken extracts the content from the header, striping the Bearer prefix
@@ -225,6 +227,19 @@ func (a *Api) ApiKeyAuthMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+func (a *Api) CorrelationMiddleware(next http.Handler) http.Handler{
+	return http.HandlerFunc(func(w  http.ResponseWriter, r *http.Request){
+		correlationID := r.Header.Get("X-Request-ID")
+		if correlationID == ""{
+			correlationID = uuid.New().String()
+		}
+		//attach the correlation id to the request as a context
+		ctx := context.WithValue(r.Context(), "correlation_id", correlationID)
+		w.Header().Set("X-Request-ID", correlationID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+
+	})
+}
 func (a *Api) loadAPIKeys() {
 	// For now, hardcode some test keys - replace with config file loading later
 	a.APIConfig = APIkeysConfig{
@@ -275,7 +290,7 @@ func (a *Api) initRouter() {
 	a.Router.Route("/tasks", func(r chi.Router) {
 		r.Use(a.ApiKeyAuthMiddleware)
 		r.Use(a.ApiRateLimitMiddleware)
-
+		r.Use(a.CorrelationMiddleware)
 		r.Post("/", a.StartTaskHandler)
 		r.Get("/", a.GetTasksHandler)
 		r.Route("/{taskID}", func(r chi.Router) {
@@ -283,7 +298,7 @@ func (a *Api) initRouter() {
 		})
 	})
 
-	// Serve static web UI files (no auth required) - MUST BE LAST as it catches all remaining routes
+	// Serve static web UI files (no auth required) 
 	fileServer := http.FileServer(http.Dir("./web"))
 	a.Router.Handle("/*", fileServer)
 }
