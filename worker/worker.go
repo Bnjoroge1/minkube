@@ -40,13 +40,13 @@ func(w *Worker) RunTasks() {
 	for {
 		if w.Queue.Len() != 0 {
 			
-			result, task := w.runTask()
+			result, t := w.runTask()
 			if result.Error != nil {
 				log.Printf("Error running task: %v\n", result.Error)
-				 
+				w.updateTaskState(t.ID, task.Failed)
 			}
-			if task != nil {
-				log.Printf("Task %v is with state %v\n", task.ID, task.State)
+			if t != nil {
+				log.Printf("Task %v is with state %v\n", t.ID, t.State)
 			}
 
 		} else {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+
 	//"minkube/task"
 	"os"
 	"time"
@@ -30,27 +31,28 @@ type Task struct {
 	RestartPolicy  string            `json:"restartPolicy"`
 	StartTime      time.Time         `json:"startTime"`
 	EndTime        time.Time         `json:"endTime"`
-	HealthCheck string
-	RestartCount int
+	HealthCheck    string
+	RestartCount   int
 }
+
 // Add this for the complete request from client
 type StartTaskEventRequest struct {
-    Task StartTaskRequest `json:"task"`
-    // No ID, State, or Timestamp - server generates these
+	Task StartTaskRequest `json:"task"`
+	// No ID, State, or Timestamp - server generates these
 }
 type StartTaskRequest struct {
-    Name           string            `json:"name"`
-    Image          string            `json:"image"`
-    Memory         int               `json:"memory"`
-    Disk           int               `json:"disk"`
-    RestartPolicy  string            `json:"restartPolicy"`
-    PortBindings   map[string]string `json:"portBindings,omitempty"`
-    // Only fields the client should/can provide
+	Name          string            `json:"name"`
+	Image         string            `json:"image"`
+	Memory        int               `json:"memory"`
+	Disk          int               `json:"disk"`
+	RestartPolicy string            `json:"restartPolicy"`
+	PortBindings  map[string]string `json:"portBindings,omitempty"`
+	// Only fields the client should/can provide
 }
 type DockerInspectResponse struct {
-	Error error
+	Error     error
 	Container *types.ContainerJSON
-} 
+}
 
 // docker container config
 type Config struct {
@@ -72,10 +74,10 @@ func (task *Task) NewConfig(t *Task) *Config {
 	log.Printf("NewConfig: Creating config for task %v", t.ID)
 
 	config := &Config{
-		Name:  t.Name,
-		Image: t.Image,
-		Memory: int64(t.Memory),
-		Disk: int64(t.Disk),
+		Name:          t.Name,
+		Image:         t.Image,
+		Memory:        int64(t.Memory),
+		Disk:          int64(t.Disk),
 		RestartPolicy: t.RestartPolicy,
 	}
 	log.Printf("NewConfig: Created config for task %v", t.ID)
@@ -111,10 +113,10 @@ type DockerResult struct {
 
 // TaskEvent is a struct to represent the user's desire to change the status from one to the other.
 type TaskEvent struct {
-	ID        uuid.UUID          `json:"id"`
-	State     State              `json:"state"`
-	Timestamp time.Time          `json:"timestamp"`
-	Task      Task              `json:"task"`
+	ID        uuid.UUID `json:"id"`
+	State     State     `json:"state"`
+	Timestamp time.Time `json:"timestamp"`
+	Task      Task      `json:"task"`
 }
 
 // run container
@@ -129,7 +131,6 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 		return DockerResult{Error: err}
 	}
 	io.Copy(os.Stdout, reader)
-	
 
 	//get config info
 	rp := container.RestartPolicy{
@@ -163,12 +164,11 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 		return DockerResult{Error: err}
 	}
 	d.ContainerId = resp.ID
-	
+
 	if err != nil {
 		log.Printf("Error getting container logs %s: %v\n", resp.ID, err)
 		return DockerResult{Error: err}
 	}
-	
 
 	return DockerResult{
 		ContainerId: resp.ID,
@@ -211,10 +211,10 @@ func (d *Docker) IsRunning(client *client.Client, containerID string) (bool, err
 }
 
 func (d *Docker) InspectContainer(client *client.Client, containerID string) DockerInspectResponse {
-	
+
 	ctx := context.Background()
 	response, err := client.ContainerInspect(ctx, containerID)
-	if err != nil{
+	if err != nil {
 		log.Printf("Error inspecting the container: %s, %v", containerID, err)
 		return DockerInspectResponse{Error: err}
 	}
