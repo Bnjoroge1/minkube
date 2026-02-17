@@ -142,19 +142,31 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 	cc := container.Config{
 		Image: d.Config.Image,
 		Env:   d.Config.Env,
+		Cmd: []string{"tail", "-f", "/dev/null"},
 	}
 	hc := container.HostConfig{
 		RestartPolicy:   rp,
 		Resources:       r,
 		PublishAllPorts: true,
 	}
-	//attempts to create container
+	// Check if container is already running
+	inspectRunning := d.InspectContainer(client, d.ContainerId)
+	if inspectRunning.Error == nil && inspectRunning.Container.State != nil && inspectRunning.Container.State.Status == "running" {
+		log.Printf("Container %s is already running.\n", d.ContainerId)
+		return DockerResult{
+			ContainerId: d.ContainerId,
+			Action:      "start",
+			Result:      "already running",
+			Error:       nil,
+		}
+	}
+	// Attempts to create container
 	resp, err := client.ContainerCreate(
-		ctx, &cc, &hc, nil, nil, d.Config.Name)
-	if err != nil {
-		log.Printf("Error creating container using image %s: %v \n",
-			d.Config.Image, err)
-		return DockerResult{Error: err}
+			ctx, &cc, &hc, nil, nil, d.Config.Name)
+		if err != nil {
+			log.Printf("Error creating container using image %s: %v \n",
+				d.Config.Image, err)
+			return DockerResult{Error: err}
 	}
 
 	//start container
@@ -164,6 +176,15 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 		return DockerResult{Error: err}
 	}
 	d.ContainerId = resp.ID
+	//give container some time to start
+	time.Sleep(100 * time.Millisecond)
+
+	//check if its actually running
+	inspect := d.InspectContainer(client, resp.ID)
+	if inspect.Error != nil{
+		return DockerResult{Error: err}
+	}
+	
 
 	if err != nil {
 		log.Printf("Error getting container logs %s: %v\n", resp.ID, err)

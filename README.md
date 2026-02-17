@@ -22,6 +22,8 @@ Workers execute the tasks assigned by the Manager.
 *   **Performance:** Local storage of task IDs allows for faster access, as the Worker does not need to make a network round trip to the Manager to retrieve this information.
 *   **Data Reconciliation:** Periodically, each Worker reconciles its local task database with the Manager's task database to ensure consistency.
 
+When worker runs a task and it fails, do we want to requeue the task? probably, but we gotta come up with a good retry strategy. depending on the error type, we dont just wanna retry infinite times. if the error is transient, then we want to requeue. if it's permanent then we want to just return to the user(makes no sense to retry the request).
+
 ### Planned Enhancements & System Details
 
 #### Distributed Key-Value Store for Tasks

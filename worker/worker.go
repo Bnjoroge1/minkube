@@ -14,13 +14,13 @@ import (
 )
 
 type Worker struct {
-	Name      string
-	Queue     queue.Queue
-	TaskIds   map[uuid.UUID]*task.Task //stores the task ids which can be referenced in the manager by the ID
-	TaskCount int
-	Stats     *Stats
-    DockerClient *client.Client
-	mu        sync.Mutex
+	Name         string
+	Queue        queue.Queue
+	TaskIds      map[uuid.UUID]*task.Task //stores the task ids which can be referenced in the manager by the ID
+	TaskCount    int
+	Stats        *Stats
+	DockerClient *client.Client
+	mu           sync.Mutex
 }
 
 func (w *Worker) AddTask(t *task.Task) {
@@ -35,15 +35,19 @@ func (w *Worker) CollectStats() {
 		time.Sleep(15 * time.Second)
 	}
 }
-func(w *Worker) RunTasks() {
+func (w *Worker) RunTasks() {
 	//another goroutine that loops over the queue and runs any existing tasks
 	for {
 		if w.Queue.Len() != 0 {
-			
+
 			result, t := w.runTask()
 			if result.Error != nil {
 				log.Printf("Error running task: %v\n", result.Error)
 				w.updateTaskState(t.ID, task.Failed)
+
+
+				//decide if we need to retry depending on the error
+				//
 			}
 			if t != nil {
 				log.Printf("Task %v is with state %v\n", t.ID, t.State)
@@ -53,7 +57,7 @@ func(w *Worker) RunTasks() {
 			log.Printf("No tasks to process currently.\n")
 		}
 		log.Println("Sleeping for 10 seconds.")
-		log.Println("waiting for other task") 
+		log.Println("waiting for other task")
 		time.Sleep(10 * time.Second)
 	}
 }
@@ -70,59 +74,53 @@ func (w *Worker) runTask() (task.DockerResult, *task.Task) {
 	*/
 	//retrieve task from queue if it exists.
 	log.Printf("Running task")
-     w.mu.Lock()
-     if w.Queue.Len() == 0{
-        w.mu.Unlock()
-        return task.DockerResult{}, nil
-    }
+	w.mu.Lock()
+	if w.Queue.Len() == 0 {
+		w.mu.Unlock()
+		return task.DockerResult{}, nil
+	}
 	t := w.Queue.Dequeue()
-    w.mu.Unlock()
+	w.mu.Unlock()
 
 	//assert that it's of task.Task type
 	taskQueued, ok := t.(*task.Task)
-    if !ok {
-        log.Printf("Error: Item in queue is not a *task.Task")
-        return task.DockerResult{Error: fmt.Errorf("Invalid type in queue")}, nil
-    }
+	if !ok {
+		log.Printf("Error: Item in queue is not a *task.Task")
+		return task.DockerResult{Error: fmt.Errorf("Invalid type in queue")}, nil
+	}
 	log.Printf("Task %v is in state %v\n", taskQueued.ID, taskQueued.State)
-
-
-	
 
 	//validate transition state is correct.
 	var result task.DockerResult
 	var updatedTask *task.Task
 
-	
-	
-    w.mu.Lock()
-    defer w.mu.Unlock()
-    switch taskQueued.State {
-    case task.Pending:
-        taskQueued.State = task.Scheduled
-        fallthrough //manually fall through to next case
-    case task.Scheduled:
-        //if it's scheduled, we want to start the task.
-        log.Printf("Starting scheduled task %v\n", taskQueued.ID)
-        result, updatedTask = w.StartTask(taskQueued)
-        
-        if result.Error != nil {
-            log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
-            return result, taskQueued
-        }
-        log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
-        return result, updatedTask
-    case task.Completed:
-        //if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
-        result = w.StopTask(taskQueued)
-        return result, taskQueued
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	switch taskQueued.State {
+	case task.Pending:
+		taskQueued.State = task.Scheduled
+		fallthrough //manually fall through to next case
+	case task.Scheduled:
+		//if it's scheduled, we want to start the task.
+		log.Printf("Starting scheduled task %v\n", taskQueued.ID)
+		result, updatedTask = w.StartTask(taskQueued)
 
-    default:
-        err := fmt.Errorf("unexpected task state: %v", taskQueued.State)
-        return  task.DockerResult{Error:err}, taskQueued
-    }
+		if result.Error != nil {
+			log.Printf("Error starting task %v:%v \n", taskQueued.ID, result)
+			return result, taskQueued
+		}
+		log.Printf("Task that was scheduled %v is now in state %v\n", updatedTask.ID, updatedTask.State)
+		return result, updatedTask
+	case task.Completed:
+		//if the task's state from the queue is completed we want to stop the task(and therefore transition it to Completed. )
+		result = w.StopTask(taskQueued)
+		return result, taskQueued
 
-    
+	default:
+		err := fmt.Errorf("unexpected task state: %v", taskQueued.State)
+		return task.DockerResult{Error: err}, taskQueued
+	}
+
 }
 
 func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {
@@ -150,12 +148,12 @@ func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {
 	result := d.Run(w.DockerClient)
 
 	if result.Error != nil {
-		log.Printf("Error starting task %v:%v \n", t.ID, result)
+		//log.Printf("Error starting task %v:%v \n", t.ID, result)
 		t.State = task.Failed
 		w.TaskIds[t.ID] = t
 		return result, nil
 	}
-	log.Printf("Docker container started successfully for task %v", t.ID)
+	log.Printf("Docker container: {%v} started successfully for task %v", t.ContainerID, t.ID)
 
 	t.ContainerID = result.ContainerId
 	t.State = task.Running
@@ -184,7 +182,7 @@ func (w *Worker) StopTask(t *task.Task) task.DockerResult {
 	return result
 }
 
-//function to get all tasks for this worker
+// function to get all tasks for this worker
 func (w *Worker) GetTasks() []task.Task {
 	tasks := make([]task.Task, 0, len(w.TaskIds))
 	for _, t := range w.TaskIds {
@@ -193,7 +191,7 @@ func (w *Worker) GetTasks() []task.Task {
 	return tasks
 }
 
-//function to check if task is still running
+// function to check if task is still running
 func (w *Worker) IsTaskRunning(t task.Task, containerID string) (bool, error) {
 	if containerID == "" {
 		return false, nil
@@ -211,69 +209,68 @@ func (w *Worker) IsTaskRunning(t task.Task, containerID string) (bool, error) {
 	return isRunning, nil
 }
 func (w *Worker) MonitorTasks() {
-    for {
-        // 1. Create a list of tasks to check to avoid holding the lock for long.
-        var tasksToInspect []*task.Task
-        w.mu.Lock()
-        for _, t := range w.TaskIds {
-            if t.State == task.Running {
-                tasksToInspect = append(tasksToInspect, t)
-            }
-        }
-        w.mu.Unlock()
+	for {
+		// 1. Create a list of tasks to check to avoid holding the lock for long.
+		var tasksToInspect []*task.Task
+		w.mu.Lock()
+		for _, t := range w.TaskIds {
+			if t.State == task.Running {
+				tasksToInspect = append(tasksToInspect, t)
+			}
+		}
+		w.mu.Unlock()
 
-        log.Printf("Reconciliation loop: checking %d running tasks", len(tasksToInspect))
+		log.Printf("Reconciliation loop: worker checking %d running tasks(as in docker container status)", len(tasksToInspect))
 
-        // 2. Now, iterate over the copy, performing slow I/O operations.
-        for _, t := range tasksToInspect {
-            resp := w.InspectTask(*t)
-            if resp.Error != nil {
-                log.Printf("MonitorTasks: Error inspecting task %s: %v", t.ID, resp.Error)
-                // The container might have been removed. Mark as failed.
-                w.updateTaskState(t.ID, task.Failed)
-                continue
-            }
+		// 2. Now, iterate over the copy, performing slow I/O operations.
+		for _, t := range tasksToInspect {
+			resp := w.InspectTask(*t)
+			if resp.Error != nil {
+				log.Printf("MonitorTasks: Error inspecting task %s: %v", t.ID, resp.Error)
+				// The container might have been removed. Mark as failed.
+				w.updateTaskState(t.ID, task.Failed)
+				continue
+			}
 
-            if resp.Container == nil {
-                log.Printf("MonitorTasks: No container info for running task %s", t.ID)
-                w.updateTaskState(t.ID, task.Failed)
-                continue
-            }
+			if resp.Container == nil {
+				log.Printf("MonitorTasks: No container info for running task %s", t.ID)
+				w.updateTaskState(t.ID, task.Failed)
+				continue
+			}
 
-            // 3. Check the container's status and update if it has exited.
-            if resp.Container.State.Status == "exited" {
-                log.Printf("MonitorTasks: Container for task %s has exited.", t.ID)
-                w.updateTaskState(t.ID, task.Failed)
-            }
+			// 3. Check the container's status and update if it has exited.
+			if resp.Container.State.Status == "exited" {
+				log.Printf("MonitorTasks: Container for task %s has exited.", t.ID)
+				w.updateTaskState(t.ID, task.Failed)
+			}
 
-            // 4. Update the task's HostPorts with the actual assigned ports.
-            w.mu.Lock()
-            if taskToUpdate, ok := w.TaskIds[t.ID]; ok {
-                taskToUpdate.HostPorts = resp.Container.NetworkSettings.Ports
-            }
-            w.mu.Unlock()
-        }
+			// 4. Update the task's HostPorts with the actual assigned ports.
+			w.mu.Lock()
+			if taskToUpdate, ok := w.TaskIds[t.ID]; ok {
+				taskToUpdate.HostPorts = resp.Container.NetworkSettings.Ports
+			}
+			w.mu.Unlock()
+		}
 
-        // 5. Sleep for a while before the next reconciliation cycle.
-        time.Sleep(15 * time.Second)
-    }
+		// 5. Sleep for a while before the next reconciliation cycle.
+		time.Sleep(15 * time.Second)
+	}
 }
 func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
-    w.mu.Lock()
-    defer w.mu.Unlock()
-    if task, ok := w.TaskIds[taskID]; ok {
-        task.State = newState
-        task.EndTime = time.Now().UTC()
-    }
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if task, ok := w.TaskIds[taskID]; ok {
+		task.State = newState
+		task.EndTime = time.Now().UTC()
+	}
 }
 
 func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
-    config := t.NewConfig(&t)
-    d := t.NewDocker(config)
+	config := t.NewConfig(&t)
+	d := t.NewDocker(config)
 
-    response := d.InspectContainer(w.DockerClient, t.ContainerID)
-    
-    return response
-    
+	response := d.InspectContainer(w.DockerClient, t.ContainerID)
+
+	return response
+
 }
-
