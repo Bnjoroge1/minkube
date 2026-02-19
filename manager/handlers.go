@@ -44,12 +44,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("Error unmarshalling body: %v\n", err)
 		log.Printf(msg)
-		w.WriteHeader(400)
-		e := ErrResponse{
-			HTTPStatusCode: 400,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	var taskRequestEvent task.StartTaskEventRequest
@@ -57,34 +52,20 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("Error unmarshalling body: %v\n", err)
 		log.Printf(msg)
-		w.WriteHeader(400)
-		e := ErrResponse{
-			HTTPStatusCode: 400,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	if taskRequestEvent.Task.Name == "" {
 		msg := "Task name is required"
 		log.Printf(msg)
-		w.WriteHeader(http.StatusBadRequest)
-		e := ErrResponse{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	if taskRequestEvent.Task.Image == "" {
 		msg := "Task image is required"
 		log.Printf(msg)
-		w.WriteHeader(http.StatusBadRequest)
-		e := ErrResponse{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+
 		return
 	}
 	// Validate memory limits - Docker requires minimum 6MB (6 * 1024 * 1024 bytes)
@@ -95,24 +76,15 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if memoryInBytes < minMemoryBytes {
 		msg := fmt.Sprintf("Memory must be at least %dMB, got %dMB", minMemoryMB, taskRequestEvent.Task.Memory)
 		log.Printf(msg)
-		w.WriteHeader(http.StatusBadRequest)
-		e := ErrResponse{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	// Validate disk space if specified
 	if taskRequestEvent.Task.Disk > 0 && taskRequestEvent.Task.Disk < 1 {
 		msg := "Disk space must be at least 1MB if specified"
 		log.Printf(msg)
-		w.WriteHeader(http.StatusBadRequest)
-		e := ErrResponse{
-			HTTPStatusCode: http.StatusBadRequest,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		
 		return
 	}
 
@@ -142,8 +114,8 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	a.Manager.AddTask(&te.Task)
 	log.Printf("Added task %v\n", te.Task.ID)
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(te)
+	writeSuccessResponse(w, http.StatusCreated, te)
+
 }
 func parsePaginationParams(r *http.Request) (page, limit int, err error) {
 	pageStr := r.URL.Query().Get("page")
@@ -179,7 +151,6 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 
 	//set the header to json
 	a.Manager.mu.RLock()
-	defer a.Manager.mu.RUnlock()
 	taskCount := len(a.Manager.SortedTasks)
 	start := (page - 1) * limit
 	end := min(start+limit, taskCount)
@@ -194,14 +165,17 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		taskPointers := a.Manager.SortedTasks[start:end]
 		tasks = make([]*task.Task, len(taskPointers))
-		// Copy task data to avoid holding lock during JSON encoding (memory optimization)
+		// Copy task data to avoid holding lock during JSON encoding 
 		for i, taskPtr := range taskPointers {
-			if taskPtr != nil { // Safety check following Minkube defensive patterns
+			if taskPtr != nil { 
 				taskCopy := *taskPtr
 				tasks[i] = &taskCopy
 			}
 		}
 	}
+	//release lock from above manually to avoid slow clients affecting it. 
+	a.Manager.mu.Unlock()
+
 	totalPages := (taskCount + limit - 1) / limit
 	if totalPages == 0 {
 		totalPages = 1
@@ -252,7 +226,6 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 	}
 	a.Manager.mu.Lock()
-	defer a.Manager.mu.Unlock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
 		log.Printf("Error parsing taskID: %v", err)
@@ -269,6 +242,8 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	a.Manager.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
+	a.Manager.mu.RUnlock()
+
 	writeSuccessResponse(w, http.StatusNoContent, fmt.Sprintf("Successfully stopped Task %s", taskToStop.ID))
 
 }
