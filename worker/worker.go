@@ -159,6 +159,7 @@ func (w *Worker) StartTask(t *task.Task) (task.DockerResult, *task.Task) {
 	t.State = task.Running
 	w.TaskIds[t.ID] = t
 
+
 	log.Printf("Started task %v with container ID %v\n", t.ID, t.ContainerID)
 	return result, t
 

@@ -119,7 +119,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	//create complete task with server-generated fields
 	fullTask := task.Task{
 		ID:             uuid.New(),
-		CorrelationID: correlationID,
+		CorrelationID:  correlationID,
 		Name:           taskRequestEvent.Task.Name,
 		Image:          taskRequestEvent.Task.Image,
 		Memory:         memoryInBytes,
@@ -127,6 +127,8 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		RestartPolicy:  taskRequestEvent.Task.RestartPolicy,
 		PortBindings:   taskRequestEvent.Task.PortBindings,
 		State:          task.Pending,
+		RetryCount:     0,
+		MaxRetryCount:  3,
 		StartTime:      time.Now(),
 		ExposedPortSet: make(nat.PortSet),
 		HostPorts:      make(nat.PortMap),
@@ -186,11 +188,11 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("GetTasksHandler: Total tasks=%d, page=%d, limit=%d, start=%d, end=%d", taskCount, page, limit, start, end)
 	// handle empty page case or oob.
-	var tasks [] *task.Task
+	var tasks []*task.Task
 	if start >= taskCount || taskCount == 0 {
 		tasks = []*task.Task{}
 		log.Printf("Reteruning empty slice for get task handler.")
-	}else{
+	} else {
 		taskPointers := a.Manager.SortedTasks[start:end]
 		tasks = make([]*task.Task, len(taskPointers))
 		// Copy task data to avoid holding lock during JSON encoding (memory optimization)
@@ -202,10 +204,10 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	totalPages := (taskCount + limit - 1) / limit
-	if totalPages == 0{
+	if totalPages == 0 {
 		totalPages = 1
 	}
-	
+
 	pagination := PaginationMetadata{
 		Page:       page,
 		Limit:      limit,
@@ -222,16 +224,16 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeSuccessResponse(w, http.StatusOK, response)
 }
-func writeErrorResponse(w http.ResponseWriter, statusCode int, message string){
+func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	e := ErrResponse{
-			HTTPStatusCode: statusCode,
-			Message:        message,
-		}
-		json.NewEncoder(w).Encode(e)
+		HTTPStatusCode: statusCode,
+		Message:        message,
+	}
+	json.NewEncoder(w).Encode(e)
 }
-func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}){
+func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(data)

@@ -232,7 +232,7 @@ func (m *Manager) updateTasks() error {
 	errCh := make(chan error, len(workers))
 
 	for _, w := range workers {
-		wg.Add(1) //increment wg counter by one.
+		wg.Add(1) 
 		work := w
 		go func() {
 			defer wg.Done()

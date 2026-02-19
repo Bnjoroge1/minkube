@@ -32,7 +32,8 @@ type Task struct {
 	StartTime      time.Time         `json:"startTime"`
 	EndTime        time.Time         `json:"endTime"`
 	HealthCheck    string
-	RestartCount   int
+	RetryCount   int
+	MaxRetryCount int
 }
 
 // Add this for the complete request from client
