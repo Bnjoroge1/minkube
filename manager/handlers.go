@@ -230,12 +230,14 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Error parsing taskID: %v", err)
 		w.WriteHeader(400)
+		a.Manager.mu.Unlock()
 		return
 	}
 	taskToStop, ok := a.Manager.TaskDb[tId]
 	if !ok {
 		log.Printf("Task with ID %s not found.\n", taskID)
 		w.WriteHeader(http.StatusBadRequest)
+		a.Manager.mu.Unlock()
 		return
 	}
 	taskToStop.State = task.Completed

@@ -62,9 +62,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 // Handler for getting tasks
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	//set the header to json
-	a.Worker.mu.Lock()
-	defer a.Worker.mu.Unlock()
-	//parameters for pagination
+	// 	//parameters for pagination
 	pageStr := r.URL.Query().Get("page")
 	limitStr := r.URL.Query().Get("limit")
 
@@ -84,11 +82,13 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-
+	a.Worker.mu.RLock()
 	tasks := make([]*task.Task, 0, len(a.Worker.TaskIds))
-	for _, task := range a.Worker.TaskIds {
-		tasks = append(tasks, task)
+	for _, t := range a.Worker.TaskIds {
+		taskCopy := *t
+		tasks = append(tasks, &taskCopy)
 	}
+	a.Worker.mu.RUnlock()
 	//get the pagination
 	totalTasks := len(tasks)
 	totalPages := (totalTasks + limit - 1) / limit
@@ -125,9 +125,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(response)
+	writeSuccessResponse(w, http.StatusOK, response)
 }
 
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -155,10 +153,24 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	
 	a.Worker.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
-	w.WriteHeader(http.StatusAccepted) //successfully stopped the task.
+	writeSuccessResponse(w, http.StatusOK, taskToStop)
 
 }
+func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
 
+func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	e := ErrResponse{
+		HTTPStatusCode: statusCode,
+		Message:        message,
+	}
+	json.NewEncoder(w).Encode(e)
+}
 func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 	a.Worker.mu.Lock()
 	defer a.Worker.mu.Unlock()

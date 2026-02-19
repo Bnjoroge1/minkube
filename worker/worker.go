@@ -20,7 +20,7 @@ type Worker struct {
 	TaskCount    int
 	Stats        *Stats
 	DockerClient *client.Client
-	mu           sync.Mutex
+	mu           sync.RWMutex
 }
 
 func (w *Worker) AddTask(t *task.Task) {
