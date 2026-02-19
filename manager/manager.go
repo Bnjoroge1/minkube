@@ -416,9 +416,7 @@ func (m *Manager) SendWork() {
 	req.Header.Set("X-Request-ID", correlationID)
 	if err != nil {
 		log.Printf("Error creating request: %v", err)
-		m.mu.Lock()
 		m.AddTask(t)
-		m.mu.Unlock()
 		return
 	}
 	
@@ -427,9 +425,7 @@ func (m *Manager) SendWork() {
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("Error connecting to %v: %v", w, err)
-		m.mu.Lock()
 		m.AddTask(t)
-		m.mu.Unlock()
 		return
 	}
 	defer resp.Body.Close()  //must always close resp body. 
