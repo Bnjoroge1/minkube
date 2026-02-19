@@ -184,7 +184,6 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	start := (page - 1) * limit
 	end := min(start+limit, taskCount)
 
-	// Release lock immediately after data collection
 
 	log.Printf("GetTasksHandler: Total tasks=%d, page=%d, limit=%d, start=%d, end=%d", taskCount, page, limit, start, end)
 	// handle empty page case or oob.

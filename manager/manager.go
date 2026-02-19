@@ -260,7 +260,6 @@ func (m *Manager) updateTasks() error {
 			decoder := json.NewDecoder(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				log.Printf("Error: retrieved list from worker: %s. Received status code: %d", work, resp.StatusCode)
-				//create the error response
 				resp_err := worker.ErrResponse{}
 				dec_err := decoder.Decode(&resp_err)
 				if dec_err != nil {
