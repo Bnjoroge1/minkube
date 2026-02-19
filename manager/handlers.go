@@ -174,7 +174,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	//release lock from above manually to avoid slow clients affecting it. 
-	a.Manager.mu.Unlock()
+	a.Manager.mu.RUnlock()
 
 	totalPages := (taskCount + limit - 1) / limit
 	if totalPages == 0 {
@@ -239,10 +239,9 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	taskToStop.State = task.Completed
-
+	a.Manager.mu.Unlock()
 	a.Manager.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
-	a.Manager.mu.RUnlock()
 
 	writeSuccessResponse(w, http.StatusNoContent, fmt.Sprintf("Successfully stopped Task %s", taskToStop.ID))
 
