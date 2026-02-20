@@ -37,12 +37,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		msg := fmt.Sprintf("error parsing JSON: %v", err)
 		log.Printf(msg)
-		w.WriteHeader(http.StatusBadRequest)
-		e := ErrResponse{
-			HTTPStatusCode: 400,
-			Message:        msg,
-		}
-		json.NewEncoder(w).Encode(e)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	log.Printf("task event: %v", te)
@@ -55,8 +50,7 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 
 	a.Worker.AddTask(&te.Task)
 	log.Printf("added task: %v", te)
-	w.WriteHeader(http.StatusCreated) //specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
-	json.NewEncoder(w).Encode(te)
+	writeSuccessResponse(w, http.StatusCreated, te)//specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
 }
 
 // Handler for getting tasks
@@ -176,8 +170,7 @@ func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Api) HealthHandler(w http.ResponseWriter, r *http.Request){
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "up"})
+	writeSuccessResponse(w, http.StatusOK, map[string]string{"status": "up"})
 }
 
 func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
