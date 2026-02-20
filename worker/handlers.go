@@ -132,22 +132,23 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {
 		//if no taskID is passed in the request, return a 400 error
-		log.Printf("No taskID passed in request.\n")
-		w.WriteHeader(400)
+		msg := fmt.Sprintf("task id is not passed in request %s", taskID)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		return
 	}
 	a.Worker.mu.Lock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
-		log.Printf("Error parsing taskID: %v", err)
-		w.WriteHeader(400)
 		a.Worker.mu.Unlock()
+		msg := fmt.Sprintf("COuld not parse id %s", taskID)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop, ok := a.Worker.TaskIds[tId]
 	if !ok {
-		log.Printf("Task with ID %s not found.\n", taskID)
-		w.WriteHeader(http.StatusBadRequest)
 		a.Worker.mu.Unlock()
+		msg := fmt.Sprintf("Task with ID %s not found.\n", taskID)
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop.State = task.Completed
@@ -158,6 +159,27 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	writeSuccessResponse(w, http.StatusOK, taskToStop)
 
 }
+
+func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
+	a.Worker.mu.RLock()
+	//create a copy of stats
+	stats := a.Worker.Stats.GetStats()
+	if stats != nil{
+		a.Worker.mu.RUnlock()
+		msg := fmt.Sprintf("No stats to show")
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
+	statsCopy := *a.Worker.Stats
+	a.Worker.mu.RUnlock()
+	writeSuccessResponse(w, http.StatusOK, statsCopy)
+}
+
+func (a *Api) HealthHandler(w http.ResponseWriter, r *http.Request){
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "up"})
+}
+
 func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -172,16 +194,4 @@ func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 		Message:        message,
 	}
 	json.NewEncoder(w).Encode(e)
-}
-func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
-	a.Worker.mu.Lock()
-	defer a.Worker.mu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	json.NewEncoder(w).Encode(a.Worker.Stats)
-}
-
-func (a *Api) HealthHandler(w http.ResponseWriter, r *http.Request){
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "up"})
 }
