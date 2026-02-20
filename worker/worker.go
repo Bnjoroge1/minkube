@@ -30,7 +30,7 @@ func (w *Worker) AddTask(t *task.Task) {
 func (w *Worker) CollectStats() {
 	for {
 		log.Println("Collecting stats")
-		w.Stats = GetStats()
+		w.Stats =  w.Stats.GetStats()
 		w.TaskCount = w.Stats.TaskCount
 		time.Sleep(15 * time.Second)
 	}

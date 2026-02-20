@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-type Stats struct {
+	type Stats struct {
 	MemStats  *linux.MemInfo
 	DiskStats *linux.Disk
 	CpuStats  *linux.CPUStat
