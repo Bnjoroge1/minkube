@@ -68,17 +68,15 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("added task: %v", te)
 	writeSuccessResponse(w, http.StatusCreated, te)//specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
 }
-func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request){
-	ctlr := http.ResponseController()
-	//TODO: demultiplex stream
+func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request) {
 	taskId := chi.URLParam(r, "taskID")
-	if taskId == ""{
+	if taskId == "" {
 		msg := "Task ID is empty. Please provide one \n"
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	tid, err := uuid.Parse(taskId)
-	if err != nil{
+	if err != nil {
 		msg := "Task ID is not a valid UUID \n"
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
@@ -91,20 +89,24 @@ func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request){
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.WriteHeader(http.StatusOK)
 	
 	
-	errp := a.Worker.ProcessDockerStream(logResponse, func(logFormat task.DockerLogFormat) error{
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.WriteHeader(http.StatusOK)
-		logEntry := json.Marshal(logFormat)
+	errp := a.Worker.ProcessDockerStream(logResponse, func(logFormat task.DockerLogFormat) error {
+		logEntry, err := json.Marshal(logFormat)
+		if err != nil {
+			return err
+		}
 		w.Write(logEntry)
+		w.Write([]byte("\n"))
 		f.Flush()
-		return nil }
-	)
-
-	
-
-
+		return nil
+	})
+	if errp != nil {
+		log.Printf("GetDockerTaskLogsHandler: stream error: %v", errp)
+		return
+	}
 }
 
 // Handler for getting tasks
