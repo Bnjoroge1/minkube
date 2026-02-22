@@ -27,6 +27,7 @@ func (a *Api) initRouter() {
 		r.Get("/", a.GetTasksHandler)
 		r.Route("/{taskID}", func(r chi.Router) {
 			r.Delete("/", a.StopTaskHandler) //this makes it really easy to potentially add more verbs to the taskID like PUT, PATCH, etc.
+			r.Get("/logs", a.GetDockerTaskLogsHandler)
 		})
 	})
 	a.Router.Route("/health", func(r chi.Router) {

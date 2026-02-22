@@ -1,7 +1,9 @@
 ## Minkube Design Concept
 
 Minkube is a distributed task management system. This document outlines its core design principles.
-
+### Todo
+forward logs to something better than stdout/stderr, look into slog/log for debug levels
+use structured logging: 
 ### Manager
 
 The Manager is responsible for distributing tasks to available Worker nodes.

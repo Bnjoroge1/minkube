@@ -212,12 +212,7 @@ func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{
 	json.NewEncoder(w).Encode(data)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+
 func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	if taskID == "" {

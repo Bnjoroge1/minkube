@@ -52,6 +52,11 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("added task: %v", te)
 	writeSuccessResponse(w, http.StatusCreated, te)//specifically 201 instead of 200 because we are creating a resource thus want to be specific that this successful operation created a resource.
 }
+func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request){
+	ctlr := http.ResponseController()
+	
+
+}
 
 // Handler for getting tasks
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {

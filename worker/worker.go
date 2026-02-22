@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
@@ -268,7 +269,24 @@ func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
 		task.EndTime = time.Now().UTC()
 	}
 }
+func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
+	config := t.NewConfig(&t)
+	dc := t.NewDocker(config)
 
+	logOptions := types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Since:      "Wed 2025-08-10 09:08:53 UTC",
+		Until:      "",
+		Timestamps: false,
+		Follow:     false,
+		Tail:      "",
+		Details:    false,
+	}
+	logReponse := dc.GetDockerContainerLogs(w.DockerClient, t.ContainerID, logOptions)
+	return logReponse
+
+}
 func (w *Worker) InspectTask(t task.Task) task.DockerInspectResponse {
 	config := t.NewConfig(&t)
 	d := t.NewDocker(config)

@@ -2,8 +2,10 @@ package task
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
+	"minkube/task"
 
 	//"minkube/task"
 	"os"
@@ -55,6 +57,11 @@ type DockerInspectResponse struct {
 	Container *types.ContainerJSON
 }
 
+type DockerTaskLogsResponse struct {
+	Error error
+	LogStream io.ReadCloser
+
+}
 // docker container config
 type Config struct {
 	Name          string
@@ -70,6 +77,7 @@ type Config struct {
 	RestartPolicy string   // RestartPolicy for the container if it dies unexpectedly(provides resilienc) ["", "always", "unless-stopped", "on-failure"]
 
 }
+
 
 func (task *Task) NewConfig(t *Task) *Config {
 	log.Printf("NewConfig: Creating config for task %v", t.ID)
@@ -243,4 +251,22 @@ func (d *Docker) InspectContainer(client *client.Client, containerID string) Doc
 	return DockerInspectResponse{
 		Container: &response,
 	}
+}
+
+func (d *Docker) GetDockerContainerLogs(client *client.Client, t task.Task, containerOptions types.ContainerLogsOptions) DockerTaskLogsResponse {
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	logsReader, err := client.ContainerLogs(ctx, t.ContainerID, containerOptions)
+	if err != nil{
+		return DockerTaskLogsResponse{
+			Error: err,
+		}
+	}
+	_, err = io.Copy(os.Stdout, logsReader)
+	if err != nil && !errors.Is(err, io.EOF){
+		return DockerTaskLogsResponse{
+			Error: err,
+		}
 }
