@@ -273,4 +273,6 @@ func (d *Docker) GetDockerContainerLogs(client *client.Client, t task.Task, cont
 		return DockerTaskLogsResponse{
 			Error: err,
 		}
+	}
+	return DockerTaskLogsResponse{}
 }

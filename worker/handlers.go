@@ -20,6 +20,22 @@ type ErrResponse struct {
 	Message        string `json:"message"`
 }
 
+func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
+}
+
+func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	e := ErrResponse{
+		HTTPStatusCode: statusCode,
+		Message:        message,
+	}
+	json.NewEncoder(w).Encode(e)
+}
+
 // handlers for different routers
 func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	
@@ -55,7 +71,39 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request){
 	ctlr := http.ResponseController()
 	//TODO: demultiplex stream
+	taskId := chi.URLParam(r, "taskID")
+	if taskId == ""{
+		msg := "Task ID is empty. Please provide one \n"
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
+	tid, err := uuid.Parse(taskId)
+	if err != nil{
+		msg := "Task ID is not a valid UUID \n"
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
+	t := a.Worker.GetTask(tid)
+	logResponse := a.Worker.GetDockerTaskLogs(t)
+	f, ok := w.(http.Flusher)
+	if !ok{
+		msg := "flusher is not the right format"
+		writeErrorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
 	
+	
+	errp := a.Worker.ProcessDockerStream(logResponse, func(logFormat task.DockerLogFormat) error{
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		logEntry := json.Marshal(logFormat)
+		w.Write(logEntry)
+		f.Flush()
+		return nil }
+	)
+
+	
+
 
 }
 
@@ -178,18 +226,4 @@ func (a *Api) HealthHandler(w http.ResponseWriter, r *http.Request){
 	writeSuccessResponse(w, http.StatusOK, map[string]string{"status": "up"})
 }
 
-func writeSuccessResponse(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(data)
-}
 
-func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	e := ErrResponse{
-		HTTPStatusCode: statusCode,
-		Message:        message,
-	}
-	json.NewEncoder(w).Encode(e)
-}

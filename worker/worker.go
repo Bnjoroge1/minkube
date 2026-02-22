@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -30,7 +31,12 @@ type Worker struct {
 func (w *Worker) AddTask(t *task.Task) {
 	w.Queue.Enqueue(t)
 }
-
+func (w *Worker) GetTask(taskID uuid.UUID) task.Task{
+	w.mu.RLock()
+	t := w.TaskIds[taskID]
+	taskCopy := *t
+	return taskCopy
+}
 func (w *Worker) CollectStats() {
 	for {
 		log.Println("Collecting stats")
@@ -272,12 +278,10 @@ func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
 		task.EndTime = time.Now().UTC()
 	}
 }
-func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse) ([]task.DockerLogFormat, error){
-	dockerLog := task.DockerLogFormat{}
-	logs := []task.DockerLogFormat{}
+func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse, streamLog func(log task.DockerLogFormat) error) error{
 
 	if response.Error != nil{
-		return logs, response.Error
+		return response.Error
 	}
 	defer response.LogStream.Close()
 
@@ -289,18 +293,14 @@ func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse) ([]ta
 		}
 		if err != nil{
 			log.Printf("Could not read header buf from docker log byte stream %s", err)
-			return  logs, err
+			return  err
 		}
 		
 		stream_type := header_buf[0]
 
 		payloadSize := binary.BigEndian.Uint32((header_buf[4:8]))
 		
-		if payloadSize == 0{
-			logs = append(logs, task.DockerLogFormat{})
-			continue
-		}
-
+		
 		payload_buf := make([]byte, payloadSize)
 		_, errp := io.ReadFull(response.LogStream, payload_buf)
 
@@ -310,16 +310,17 @@ func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse) ([]ta
 		}
 		if errp != nil{
 			log.Printf("Could not read payload from docke log bytestream, %s", errp)
-			return logs, errp
+			return errp
 		}
-		dockerLog = task.DockerLogFormat{
+		dockerLog := task.DockerLogFormat{
 			StreamType: int(stream_type),
 			Payload: strings.ToValidUTF8(string(payload_buf), ""),
 		}
-		logs = append(logs, dockerLog)
+		if err:= streamLog(dockerLog);err !=nil {return err}	
 	}
-	return  logs, nil
+	return nil
 }
+
 func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
 	config := t.NewConfig(&t)
 	dc := t.NewDocker(config)
@@ -334,7 +335,7 @@ func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
 		Tail:      "",
 		Details:    true,
 	}
-	logReponse := dc.GetDockerContainerLogs(w.DockerClient, t.ContainerID, logOptions)
+	logReponse := dc.GetDockerContainerLogs(w.DockerClient, t.ContainerID, logOptions)	
 	return logReponse
 
 }
