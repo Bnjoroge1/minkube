@@ -429,9 +429,6 @@ func (m *Manager) SendWork() {
 	}
 	defer resp.Body.Close()  //must always close resp body. 
 
-	//lock manager state again
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	d := json.NewDecoder(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
@@ -445,13 +442,14 @@ func (m *Manager) SendWork() {
 		log.Printf("Response error: %d", e.HTTPStatusCode)
 		return
 	}
-
+	m.mu.Lock()
 	log.Printf("Successfully sent task %v to worker %s", t.ID, w)
 	m.EventDb[t.ID] = &te //matching task to event db
 	m.WorkersTaskMap[w] = append(m.WorkersTaskMap[w], t.ID)
 	m.TaskWorkerMap[t.ID] = w
 	m.TaskDb[t.ID] = t
 	log.Printf("Successfully added task %v to eventDB, and the task maps.", t.ID)
+	m.mu.Unlock()
 	
 }
 
@@ -462,7 +460,8 @@ func (m *Manager) GetTasks() []*task.Task {
     for _, t := range m.TaskDb {
         tasks = append(tasks, t)
     }
-    return tasks
+    taskCopy := tasks
+    return taskCopy
 }
 func (m *Manager) MarkWorkerDown(worker string){
 	m.mu.Lock()

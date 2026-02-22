@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	  _ "net/http/pprof"
+	_ "net/http/pprof"
+	"time"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -35,7 +37,17 @@ func (a *Api) initRouter() {
 
 func (a *Api) Start() {
 	a.initRouter()
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+	addr := fmt.Sprintf("%s:%d", a.Address, a.Port)
+	server := &http.Server{
+		Addr:              addr,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		Handler:           a.Router,
+	}
+	log.Printf("Starting worker server on %s", addr)
+	err := server.ListenAndServe()
 	if err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

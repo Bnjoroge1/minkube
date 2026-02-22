@@ -224,20 +224,21 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		//if no taskID is passed in the request, return a 400 error
 		log.Printf("No taskID passed in request.\n")
 		w.WriteHeader(400)
+		return 
 	}
 	a.Manager.mu.Lock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
-		log.Printf("Error parsing taskID: %v", err)
-		w.WriteHeader(400)
+		msg := fmt.Sprintf("Error parsing taskID: %v", err)
 		a.Manager.mu.Unlock()
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop, ok := a.Manager.TaskDb[tId]
 	if !ok {
-		log.Printf("Task with ID %s not found.\n", taskID)
-		w.WriteHeader(http.StatusBadRequest)
+		msg := fmt.Sprintf("Task not found: %v", err)
 		a.Manager.mu.Unlock()
+		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop.State = task.Completed

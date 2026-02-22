@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 	  _ "net/http/pprof"
-
+	"net/http"
 	"runtime/trace"
 
 	"github.com/docker/docker/client"
@@ -61,6 +61,9 @@ func runManager() {
 		Port:    8080, // Manager listens on a different port
 		Manager: m,
 	}
+	go func () {
+		log.Println("pprof server:", http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	go m.ProcessTasks()
 	go m.UpdateTasks()

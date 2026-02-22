@@ -185,10 +185,13 @@ func (w *Worker) StopTask(t *task.Task) task.DockerResult {
 
 // function to get all tasks for this worker
 func (w *Worker) GetTasks() []task.Task {
+	w.mu.RLock()
 	tasks := make([]task.Task, 0, len(w.TaskIds))
 	for _, t := range w.TaskIds {
 		tasks = append(tasks, *t)
 	}
+	w.mu.Unlock()
+
 	return tasks
 }
 

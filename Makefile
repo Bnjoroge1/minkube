@@ -209,16 +209,17 @@ help:
 
 
 
-# Start multiple workers in background for development
+# Start multiple workers in foreground for development (Ctrl+C stops all)
 .PHONY: run-workers-dev
 run-workers-dev:
-	@echo "Starting workers in background..."
-	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go &
-	@echo "Workers started on ports 8001, 8002, 8003"
+	@echo "Starting workers on ports 8001, 8002, 8003 (Ctrl+C to stop all)..."
+	@trap 'kill 0' INT TERM; \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
+	wait
 
-# Stop background workers
+# Stop background workers (fallback if workers were detached)
 .PHONY: stop-workers
 stop-workers:
 	@echo "Stopping workers..."

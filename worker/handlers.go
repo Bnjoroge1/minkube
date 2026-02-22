@@ -157,10 +157,9 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 	a.Worker.mu.RLock()
 	//create a copy of stats
-	stats := a.Worker.Stats.GetStats()
-	if stats != nil{
+	if a.Worker.Stats == nil{
 		a.Worker.mu.RUnlock()
-		msg := fmt.Sprintf("No stats to show")
+		msg := "No stats to show"
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
