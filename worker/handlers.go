@@ -81,18 +81,29 @@ func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
-	t := a.Worker.GetTask(tid)
+	t, ok := a.Worker.GetTask(tid)
+	if !ok {
+		writeErrorResponse(w, http.StatusNotFound, "task not found on this worker")
+		return
+	}
+	if t.ContainerID == "" {
+		writeErrorResponse(w, http.StatusConflict, "task has no container yet (not running)")
+		return
+	}
 	logResponse := a.Worker.GetDockerTaskLogs(t)
+	if logResponse.Error != nil {
+		log.Printf("GetDockerTaskLogsHandler: GetDockerTaskLogs error: %v", logResponse.Error)
+		writeErrorResponse(w, http.StatusInternalServerError, fmt.Sprintf("failed to get logs: %v", logResponse.Error))
+		return
+	}
 	f, ok := w.(http.Flusher)
-	if !ok{
-		msg := "flusher is not the right format"
-		writeErrorResponse(w, http.StatusBadRequest, msg)
+	if !ok {
+		writeErrorResponse(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.WriteHeader(http.StatusOK)
-	
-	
+
 	errp := a.Worker.ProcessDockerStream(logResponse, func(logFormat task.DockerLogFormat) error {
 		logEntry, err := json.Marshal(logFormat)
 		if err != nil {

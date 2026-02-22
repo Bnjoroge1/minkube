@@ -1,9 +1,6 @@
 package worker
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,7 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
+	"encoding/binary"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
@@ -31,11 +28,14 @@ type Worker struct {
 func (w *Worker) AddTask(t *task.Task) {
 	w.Queue.Enqueue(t)
 }
-func (w *Worker) GetTask(taskID uuid.UUID) task.Task{
+func (w *Worker) GetTask(taskID uuid.UUID) (task.Task, bool) {
 	w.mu.RLock()
-	t := w.TaskIds[taskID]
-	taskCopy := *t
-	return taskCopy
+	defer w.mu.RUnlock()
+	t, ok := w.TaskIds[taskID]
+	if !ok || t == nil {
+		return task.Task{}, false
+	}
+	return *t, true
 }
 func (w *Worker) CollectStats() {
 	for {
@@ -278,10 +278,12 @@ func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
 		task.EndTime = time.Now().UTC()
 	}
 }
-func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse, streamLog func(log task.DockerLogFormat) error) error{
-
-	if response.Error != nil{
+func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse, streamLog func(log task.DockerLogFormat) error) error {
+	if response.Error != nil {
 		return response.Error
+	}
+	if response.LogStream == nil {
+		return fmt.Errorf("no log stream")
 	}
 	defer response.LogStream.Close()
 

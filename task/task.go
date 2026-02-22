@@ -2,10 +2,8 @@ package task
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log"
-	"minkube/task"
 
 	//"minkube/task"
 	"os"
@@ -257,22 +255,18 @@ func (d *Docker) InspectContainer(client *client.Client, containerID string) Doc
 	}
 }
 
-func (d *Docker) GetDockerContainerLogs(client *client.Client, t task.Task, containerOptions types.ContainerLogsOptions) DockerTaskLogsResponse {
+func (d *Docker) GetDockerContainerLogs(client *client.Client, containerID string, containerOptions types.ContainerLogsOptions) DockerTaskLogsResponse {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
-	logsReader, err := client.ContainerLogs(ctx, t.ContainerID, containerOptions)
-	if err != nil{
+	logsReader, err := client.ContainerLogs(ctx, containerID, containerOptions)
+	if err != nil {
 		return DockerTaskLogsResponse{
 			Error: err,
 		}
 	}
-	_, err = io.Copy(os.Stdout, logsReader)
-	if err != nil && !errors.Is(err, io.EOF){
-		return DockerTaskLogsResponse{
-			Error: err,
-		}
+	return DockerTaskLogsResponse{
+		LogStream: logsReader,
 	}
-	return DockerTaskLogsResponse{}
 }
