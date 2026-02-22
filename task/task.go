@@ -56,6 +56,10 @@ type DockerInspectResponse struct {
 	Error     error
 	Container *types.ContainerJSON
 }
+type DockerLogFormat struct {
+	StreamType int         `json:"streamType"`
+	Payload string            `json:"payload"`
+}
 
 type DockerTaskLogsResponse struct {
 	Error error

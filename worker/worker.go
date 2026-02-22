@@ -1,7 +1,10 @@
 package worker
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"minkube/task"
 	"strings"
@@ -269,6 +272,54 @@ func (w *Worker) updateTaskState(taskID uuid.UUID, newState task.State) {
 		task.EndTime = time.Now().UTC()
 	}
 }
+func (w *Worker) ProcessDockerStream(response task.DockerTaskLogsResponse) ([]task.DockerLogFormat, error){
+	dockerLog := task.DockerLogFormat{}
+	logs := []task.DockerLogFormat{}
+
+	if response.Error != nil{
+		return logs, response.Error
+	}
+	defer response.LogStream.Close()
+
+	for {
+		header_buf := make([]byte, 8)
+		_, err := io.ReadFull(response.LogStream, header_buf) 
+		if err == io.EOF{
+			break			
+		}
+		if err != nil{
+			log.Printf("Could not read header buf from docker log byte stream %s", err)
+			return  logs, err
+		}
+		
+		stream_type := header_buf[0]
+
+		payloadSize := binary.BigEndian.Uint32((header_buf[4:8]))
+		
+		if payloadSize == 0{
+			logs = append(logs, task.DockerLogFormat{})
+			continue
+		}
+
+		payload_buf := make([]byte, payloadSize)
+		_, errp := io.ReadFull(response.LogStream, payload_buf)
+
+
+		if errp == io.EOF{
+			break
+		}
+		if errp != nil{
+			log.Printf("Could not read payload from docke log bytestream, %s", errp)
+			return logs, errp
+		}
+		dockerLog = task.DockerLogFormat{
+			StreamType: int(stream_type),
+			Payload: strings.ToValidUTF8(string(payload_buf), ""),
+		}
+		logs = append(logs, dockerLog)
+	}
+	return  logs, nil
+}
 func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
 	config := t.NewConfig(&t)
 	dc := t.NewDocker(config)
@@ -281,7 +332,7 @@ func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
 		Timestamps: false,
 		Follow:     false,
 		Tail:      "",
-		Details:    false,
+		Details:    true,
 	}
 	logReponse := dc.GetDockerContainerLogs(w.DockerClient, t.ContainerID, logOptions)
 	return logReponse
