@@ -330,7 +330,7 @@ func (w *Worker) GetDockerTaskLogs(t task.Task) task.DockerTaskLogsResponse {
 	logOptions := types.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Since:      "Wed 2025-08-10 09:08:53 UTC",
+		Since:      "2013-01-02T13:23:37Z",
 		Until:      "",
 		Timestamps: false,
 		Follow:     false,

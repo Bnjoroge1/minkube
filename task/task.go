@@ -153,7 +153,7 @@ func (d *Docker) Run(client *client.Client) DockerResult {
 	cc := container.Config{
 		Image: d.Config.Image,
 		Env:   d.Config.Env,
-		Cmd: []string{"tail", "-f", "/dev/null"},
+		Cmd: []string{"sh", "-c", "while true; do echo log $(date); sleep 2; done"},
 	}
 	hc := container.HostConfig{
 		RestartPolicy:   rp,
