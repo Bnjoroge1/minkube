@@ -10,22 +10,5 @@ const (
 	Failed                 //if a task does fail, it moves to this state
 )
 
-// list of valid states you can transition to from one.
-var stateTransitionMap = map[State][]State{
-	Pending:   []State{Scheduled},                  //can only go from pending to scheduled
-	Scheduled: []State{Scheduled, Failed, Running}, //can schedule, fail to or successful run a task, or still being scheduled.
-	Running:   []State{Running, Completed, Failed}, //task completes or fails or still running.
-	Completed: []State{},                           //terminal state
-	Failed:    []State{},                           //terminal state.
 
-}
 
-// helper to check if can transition from one state to the other. Literally, just checks if given say a pending state, can i go to this other state?
-func containsState(states []State, state State) bool {
-	for _, s := range states {
-		if s == state {
-			return true
-		}
-	}
-	return false
-}
