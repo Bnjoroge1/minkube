@@ -20,6 +20,7 @@ type Worker struct {
 	Queue        queue.Queue
 	TaskIds      map[uuid.UUID]*task.Task //stores the task ids which can be referenced in the manager by the ID
 	TaskCount    int
+	State        State
 	Stats        *Stats
 	DockerClient *client.Client
 	mu           sync.RWMutex

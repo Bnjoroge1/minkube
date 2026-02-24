@@ -26,6 +26,8 @@ type Manager struct {
 	Workers         []string
 	WorkersTaskMap  map[string][]uuid.UUID //maps worker to task itself
 	WorkerHealth    map[string]bool
+	WorkerState   map[string]worker.State
+	WorkerHealthCheckFailures map[string]int
 	TaskWorkerMap   map[uuid.UUID]string
 	lastWorker      int //track last worker to send task to
 	LastCleanupTime time.Time
@@ -70,10 +72,14 @@ func New(workers []string) *Manager {
 	workersTaskMap := make(map[string][]uuid.UUID)
 	taskWorkerMap := make(map[uuid.UUID]string)
 	workerHealth := make(map[string] bool)
+	workerState := make(map[string]worker.State)
+	WorkerHealthCheckFailures := make(map[string]int)
 
-	for _, worker := range workers {
-		workersTaskMap[worker] = []uuid.UUID{}
-		workerHealth[worker] = false
+	for _, w := range workers {
+		workersTaskMap[w] = []uuid.UUID{}
+		workerHealth[w] = false
+		workerState[w] = worker.Ready
+		WorkerHealthCheckFailures[w] = 0
 	}
 	manager := &Manager{
 		PendingTasks:    *queue.New(),
@@ -84,6 +90,8 @@ func New(workers []string) *Manager {
 		TaskWorkerMap:   taskWorkerMap,
 		LastCleanupTime: time.Now(),
 		WorkerHealth: workerHealth,
+		WorkerState: workerState,
+		WorkerHealthCheckFailures: WorkerHealthCheckFailures,
 	}
 	manager.StartBackgroundCleanup()
 	
@@ -190,53 +198,82 @@ func (m *Manager) CleanUpTasks() {
 }
 
 func (m *Manager) SelectWorker() (string, error) {
-	// schedule task to workers
-	// given a task, evaluate all resources available in pool of workers to find suitable worker.
-	m.mu.Lock()
-	log.Printf("selecting workers")
+	// Schedule to workers that are both healthy (health check OK) and ready (state == Ready).
 	if len(m.Workers) == 0 {
-		m.mu.Unlock()
 		return "", fmt.Errorf("no workers available to select")
 	}
-	m.lastWorker = (m.lastWorker + 1) % len(m.Workers)
-	lastWorker := m.Workers[m.lastWorker]
-	m.mu.Unlock()
-
-	if m.IsWorkerHealthy(lastWorker){
-		return lastWorker, nil
-	}else{
-		healthyWorkers, err := m.GetHealthyWorkers()
-		if err != nil{
-			return "", err
-		}
-		m.mu.Lock()
-		chosenHealthyWorker := healthyWorkers[0]
-		for i, w := range m.Workers{
-			if w == chosenHealthyWorker{
-				m.lastWorker = i
-				break
-			}
-		}
-		m.mu.Unlock()
-		return healthyWorkers[0], nil
+	healthyWorkers, err := m.GetHealthyWorkers()
+	if err != nil {
+		return "", err
 	}
+	readyWorkers, err := m.GetReadyWorkers()
+	if err != nil {
+		return "", err
+	}
+	schedulable := workersInBoth(healthyWorkers, readyWorkers)
+	if len(schedulable) == 0 {
+		return "", fmt.Errorf("no workers that are both healthy and ready")
+	}
+	// Round-robin over schedulable workers
+	m.mu.Lock()
+	m.lastWorker = (m.lastWorker + 1) % len(schedulable)
+	chosen := schedulable[m.lastWorker]
+	m.mu.Unlock()
+	log.Printf("selected worker %s", chosen)
+	return chosen, nil
 }
-func (m *Manager) GetHealthyWorkers() ([]string, error){
-	//returns the healthy workers
+func (m *Manager) IsWorkerReady(w string) bool{
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.WorkerState[w] == worker.Ready
+}
+// GetHealthyWorkers returns workers that pass the health check (reachable, /health OK).
+func (m *Manager) GetHealthyWorkers() ([]string, error) {
 	m.mu.RLock()
 	healthyWorkers := []string{}
-	for _, w := range m.Workers{
-		if m.IsWorkerHealthy(w){
+	for _, w := range m.Workers {
+		if m.IsWorkerHealthy(w) {
 			healthyWorkers = append(healthyWorkers, w)
 		}
 	}
-	if len(healthyWorkers) >0 {
-		log.Printf("Found %d healthy workers", len(healthyWorkers))
-		m.mu.RUnlock()
-		return healthyWorkers, nil
+	m.mu.RUnlock()
+	if len(healthyWorkers) == 0 {
+		return nil, fmt.Errorf("no healthy workers exist")
+	}
+	log.Printf("Found %d healthy workers", len(healthyWorkers))
+	return healthyWorkers, nil
+}
+
+// GetReadyWorkers returns workers whose state is Ready (schedulable, e.g. not Unhealthy after N failures).
+func (m *Manager) GetReadyWorkers() ([]string, error) {
+	m.mu.RLock()
+	readyWorkers := []string{}
+	for _, w := range m.Workers {
+		if m.IsWorkerReady(w) {
+			readyWorkers = append(readyWorkers, w)
+		}
 	}
 	m.mu.RUnlock()
-	return nil, fmt.Errorf("no healthy workes exist")
+	if len(readyWorkers) == 0 {
+		return nil, fmt.Errorf("no ready workers exist")
+	}
+	log.Printf("Found %d ready workers", len(readyWorkers))
+	return readyWorkers, nil
+}
+
+// workersInBoth returns workers that appear in both slices (intersection).
+func workersInBoth(a, b []string) []string {
+	set := make(map[string]struct{})
+	for _, w := range a {
+		set[w] = struct{}{}
+	}
+	var out []string
+	for _, w := range b {
+		if _, ok := set[w]; ok {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 func (m *Manager) UpdateTasks() {
 	for {
@@ -496,17 +533,23 @@ func (m *Manager) GetTasks() []*task.Task {
 	taskCopy := tasks
 	return taskCopy
 }
-func (m *Manager) MarkWorkerDown(worker string) {
+func (m *Manager) MarkWorkerDown(w string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.WorkerHealth[worker] = false
-	log.Printf("worer %s marked as DOWN", worker)
+	m.WorkerHealth[w] = false
+	m.WorkerHealthCheckFailures[w] +=1
+	if m.WorkerHealthCheckFailures[w] > 5{
+		m.WorkerState[w] = worker.Unhealthy
+	}
+	log.Printf("worer %s marked as DOWN", w)
 }
-func (m *Manager) MarkWorkerUp(worker string) {
+func (m *Manager) MarkWorkerUp(w string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.WorkerHealth[worker] = true
-	log.Printf("worer %s marked as UP", worker)
+	m.WorkerHealth[w] = true
+	m.WorkerHealthCheckFailures[w] = 0
+	m.WorkerState[w] = worker.Ready
+	log.Printf("worer %s marked as UP", w)
 }
 func (m *Manager) IsWorkerHealthy(worker string) bool {
 	m.mu.RLock()
