@@ -4,6 +4,11 @@ Minkube is a distributed task management system. This document outlines its core
 ### Todo
 forward logs to something better than stdout/stderr, look into slog/log for debug levels
 use structured logging: 
+actually set up tests, mocks and all that.
+
+### Web UI
+Start the manager (e.g. `make run-manager` or `make run-manager-multi`), then open **http://localhost:8080** in your browser. You can submit tasks (name, image, memory, disk), view the task list with pagination, and delete tasks. Use a least-privilege client API key (for example, `mk_client_abc123`) configured in the manager for task read/write access. The `mk_admin_xyz789` key is intended for local development/testing only and should not be used in shared or production deployments. Run the manager from the project root so the `./web` static files are found.
+
 ### Manager
 
 The Manager is responsible for distributing tasks to available Worker nodes.
