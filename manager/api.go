@@ -298,7 +298,10 @@ func (a *Api) initRouter() {
 		})
 	})
 
-	// Serve static web UI files (no auth required) 
+	// Serve static web UI: root -> index.html, everything else from ./web
+	a.Router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./web/index.html")
+	})
 	fileServer := http.FileServer(http.Dir("./web"))
 	a.Router.Handle("/*", fileServer)
 }

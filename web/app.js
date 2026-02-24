@@ -136,8 +136,12 @@ async function submitTask(event) {
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to submit task');
+            let errMsg = 'Failed to submit task';
+            try {
+                const error = await response.json();
+                errMsg = error.message || errMsg;
+            } catch (_) {}
+            throw new Error(errMsg);
         }
         
         const result = await response.json();
@@ -170,9 +174,8 @@ async function refreshTasks() {
         }
         
         const data = await response.json();
-        console.log('Received tasks data:', data); // Debug log
         displayTasks(data.tasks || []);
-        updatePageInfo(data.pagination);
+        updatePageInfo(data.pagination_metadata);
         updateSystemStatus(data);
     } catch (error) {
         console.error('Error in refreshTasks:', error); // Debug log
@@ -196,6 +199,8 @@ function displayTasks(tasks) {
         const stateName = getStateName(task.state);
         const stateClass = getStateClass(task.state);
         
+        const taskId = task.id || task.ID || '';
+        const memoryMB = task.memory != null ? Math.round(task.memory / (1024 * 1024)) : 0;
         html += `
             <div class="task-item">
                 <div>
@@ -203,18 +208,18 @@ function displayTasks(tasks) {
                     <div class="task-image">${task.image || 'N/A'}</div>
                 </div>
                 <div style="font-size: 12px; color: #718096;">
-                    <div>Memory: ${task.memory || 0} MB</div>
+                    <div>Memory: ${memoryMB} MB</div>
                     <div>Disk: ${task.disk || 0} GB</div>
                 </div>
                 <div class="task-state ${stateClass}">
                     ${stateName}
                 </div>
                 <div style="font-size: 12px; color: #718096;">
-                    ${task.ID ? `ID: ${task.ID.substring(0, 8)}...` : 'No ID'}
+                    ${taskId ? `ID: ${String(taskId).substring(0, 8)}...` : 'No ID'}
                 </div>
                 <div>
-                    <button onclick="deleteTask('${task.ID}')" class="btn btn-danger btn-sm" 
-                            ${!task.ID ? 'disabled' : ''}>
+                    <button onclick="deleteTask('${taskId}')" class="btn btn-danger btn-sm" 
+                            ${!taskId ? 'disabled' : ''}>
                         Delete
                     </button>
                 </div>
@@ -240,8 +245,12 @@ async function deleteTask(taskId) {
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Failed to delete task');
+            let errMsg = 'Failed to delete task';
+            try {
+                const error = await response.json();
+                errMsg = error.message || errMsg;
+            } catch (_) {}
+            throw new Error(errMsg);
         }
         
         showNotification('Task deleted successfully', 'success');
@@ -257,10 +266,10 @@ function updatePageInfo(pagination) {
         document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
         return;
     }
-    
-    const totalPages = Math.ceil((pagination.total || 0) / pageLimit);
-    document.getElementById('pageInfo').textContent = 
-        `Page ${currentPage} of ${totalPages} (${pagination.total || 0} tasks)`;
+    const total = pagination.total_tasks ?? pagination.total ?? 0;
+    const totalPages = pagination.total_pages || Math.ceil(total / pageLimit) || 1;
+    document.getElementById('pageInfo').textContent =
+        `Page ${pagination.page ?? currentPage} of ${totalPages} (${total} tasks)`;
 }
 
 // Navigation
@@ -279,9 +288,8 @@ function previousPage() {
 // Update system status
 function updateSystemStatus(data) {
     const container = document.getElementById('systemStatus');
-    
-    const pagination = data.pagination || {};
-    const totalTasks = pagination.total || 0;
+    const pagination = data.pagination_metadata || data.pagination || {};
+    const totalTasks = pagination.total_tasks ?? pagination.total ?? 0;
     
     // Calculate task states
     const tasks = data.tasks || [];
