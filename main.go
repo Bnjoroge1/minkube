@@ -5,14 +5,15 @@ import (
 	"minkube/manager"
 	"minkube/task"
 	"minkube/worker"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime/trace"
 	"strconv"
 	"strings"
 	"syscall"
-	  _ "net/http/pprof"
-	"net/http"
-	"runtime/trace"
+	"time"
 
 	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
@@ -64,16 +65,21 @@ func runManager() {
 	go func () {
 		log.Println("pprof server:", http.ListenAndServe("localhost:6060", nil))
 	}()
+	go func (){
+		for {go m.HealthCheckWorkers(); time.Sleep(5 *time.Second)}
+	}()
 
 	go m.ProcessTasks()
 	go m.UpdateTasks()
 	go managerApi.Start()
+
 
 	log.Println("Manager API server started on port 8080")
 	// Keep the main function running.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
+
 }
 
 func runWorker() {

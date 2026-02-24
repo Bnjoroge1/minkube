@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"minkube/task"
@@ -19,72 +20,76 @@ import (
 )
 
 type Manager struct {
-	PendingTasks        queue.Queue
-	TaskDb         map[uuid.UUID]*task.Task
-	SortedTasks    []*task.Task
-	EventDb        map[uuid.UUID]*task.TaskEvent
-	Workers        []string
-	WorkersTaskMap map[string][]uuid.UUID //maps worker to task itself
-	WorkerHealth map[string]bool
-	TaskWorkerMap  map[uuid.UUID]string
-	lastWorker     int //track last worker to send task to
+	PendingTasks    queue.Queue
+	TaskDb          map[uuid.UUID]*task.Task
+	SortedTasks     []*task.Task
+	EventDb         map[uuid.UUID]*task.TaskEvent
+	Workers         []string
+	WorkersTaskMap  map[string][]uuid.UUID //maps worker to task itself
+	WorkerHealth    map[string]bool
+	TaskWorkerMap   map[uuid.UUID]string
+	lastWorker      int //track last worker to send task to
 	LastCleanupTime time.Time
-	mu         sync.RWMutex 
-	
+	mu              sync.RWMutex
 }
 type PaginationMetadata struct {
-	Page       int `json:"page"`
-	Limit      int `json:"limit"`
-	TotalTasks int `json:"total_tasks"`
-	TotalPages int `json:"total_pages"`
+	Page       int  `json:"page"`
+	Limit      int  `json:"limit"`
+	TotalTasks int  `json:"total_tasks"`
+	TotalPages int  `json:"total_pages"`
 	HasNext    bool `json:"has_next"`
 	HasPrev    bool `json:"has_prev"`
-} 
+}
+
 const MANAGER_API_KEY = "mk_manager_internal"
 
 type PaginatedTaskResponse struct {
-    Tasks      []*task.Task `json:"tasks"`
-    PaginationMetadata PaginationMetadata `json:"pagination_metadata"`
-}
-var httpClient = &http.Client{
-    Timeout: 30 * time.Second,
-    Transport: &http.Transport{
-	MaxIdleConns: 100,  //max number of idle connections across all hosts
-	MaxIdleConnsPerHost: 10,
-	IdleConnTimeout: 90*time.Second,
-	DisableKeepAlives: false,  //enable conenction reuse. 
-	ForceAttemptHTTP2: true,  //use HTTP2 if available
-	// Add connection tracing
-     DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-            log.Printf("Creating NEW connection to %s", addr)
-            dialer := &net.Dialer{Timeout: 5 * time.Second}
-            return dialer.DialContext(ctx, network, addr)
-        },
-    },
+	Tasks              []*task.Task       `json:"tasks"`
+	PaginationMetadata PaginationMetadata `json:"pagination_metadata"`
 }
 
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100, //max number of idle connections across all hosts
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false, //enable conenction reuse.
+		ForceAttemptHTTP2:   true,  //use HTTP2 if available
+		// Add connection tracing
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			log.Printf("Creating NEW connection to %s", addr)
+			dialer := &net.Dialer{Timeout: 5 * time.Second}
+			return dialer.DialContext(ctx, network, addr)
+		},
+	},
+}
 
 func New(workers []string) *Manager {
 	taskDB := make(map[uuid.UUID]*task.Task)
 	eventDB := make(map[uuid.UUID]*task.TaskEvent)
 	workersTaskMap := make(map[string][]uuid.UUID)
 	taskWorkerMap := make(map[uuid.UUID]string)
+	workerHealth := make(map[string] bool)
 
-	for _,worker := range workers {
+	for _, worker := range workers {
 		workersTaskMap[worker] = []uuid.UUID{}
+		workerHealth[worker] = false
 	}
-	manager :=&Manager{
-		PendingTasks: *queue.New(),
-		TaskDb: taskDB,
-		EventDb: eventDB,
-		Workers: workers,
-		WorkersTaskMap: workersTaskMap,
-		TaskWorkerMap: taskWorkerMap,
+	manager := &Manager{
+		PendingTasks:    *queue.New(),
+		TaskDb:          taskDB,
+		EventDb:         eventDB,
+		Workers:         workers,
+		WorkersTaskMap:  workersTaskMap,
+		TaskWorkerMap:   taskWorkerMap,
 		LastCleanupTime: time.Now(),
+		WorkerHealth: workerHealth,
 	}
 	manager.StartBackgroundCleanup()
+	
 	return manager
-	}
+}
 
 // Get task from db
 func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
@@ -100,13 +105,13 @@ func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
 
 //update task in db
 
-func (m *Manager)  AddTask(t *task.Task) {
+func (m *Manager) AddTask(t *task.Task) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	//adds task to manager
 	m.PendingTasks.Enqueue(t)
 	m.TaskDb[t.ID] = t
-	if m.SortedTasks == nil{
+	if m.SortedTasks == nil {
 		m.SortedTasks = make([]*task.Task, 0)
 	}
 
@@ -121,17 +126,17 @@ func (m *Manager)  AddTask(t *task.Task) {
 	log.Printf("Added task %v to pending queue. Queue size: %d", t.ID, m.PendingTasks.Len())
 }
 func (m *Manager) findTaskInSortedList(taskID uuid.UUID) int {
-    for i, task := range m.SortedTasks {
-        if task != nil && task.ID == taskID {
-            return i
-        }
-    }
-    return -1
+	for i, task := range m.SortedTasks {
+		if task != nil && task.ID == taskID {
+			return i
+		}
+	}
+	return -1
 }
 
-func (m *Manager) InsertSorted(tasks []*task.Task, newTask *task.Task)[]*task.Task{
-	//sort bys tart time because of 1) pagination becomes easier. allows me to fetch the latest 10 tasks or next ten tasks, also easier to display to some UI or dashboard. much easier to also do time range queries like before x and after y. also, go maps specifically dont maintain stable ordering i.e if i make a request to the map, and male another request, i might get differnt tasks list. 
-	index := sort.Search(len(tasks), func(i int)bool {
+func (m *Manager) InsertSorted(tasks []*task.Task, newTask *task.Task) []*task.Task {
+	//sort bys tart time because of 1) pagination becomes easier. allows me to fetch the latest 10 tasks or next ten tasks, also easier to display to some UI or dashboard. much easier to also do time range queries like before x and after y. also, go maps specifically dont maintain stable ordering i.e if i make a request to the map, and male another request, i might get differnt tasks list.
+	index := sort.Search(len(tasks), func(i int) bool {
 		return tasks[i].StartTime.After(newTask.StartTime)
 	})
 	tasks = append(tasks, nil)
@@ -140,16 +145,18 @@ func (m *Manager) InsertSorted(tasks []*task.Task, newTask *task.Task)[]*task.Ta
 
 	return tasks
 }
+
 const (
-	CLEANUP_INTERVAL      = 1 * time.Hour
+	CLEANUP_INTERVAL     = 1 * time.Hour
 	TASK_RETENTION_HOURS = 24
 )
-func(m *Manager) StartBackgroundCleanup(){
-	go func ()  {
+
+func (m *Manager) StartBackgroundCleanup() {
+	go func() {
 		ticker := time.NewTicker(CLEANUP_INTERVAL)
-		for range ticker.C{
+		for range ticker.C {
 			log.Printf("Starting background cleanuo")
-			//m.CleanUpTasks()
+			m.CleanUpTasks()
 			log.Printf("Background clean up completed")
 		}
 	}()
@@ -183,37 +190,73 @@ func (m *Manager) CleanUpTasks() {
 	}
 }
 
-
-
 func (m *Manager) SelectWorker() (string, error) {
 	// schedule task to workers
 	// given a task, evaluate all resources available in pool of workers to find suitable worker.
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	log.Printf("selecting workers")
 	if len(m.Workers) == 0 {
+		m.mu.Unlock()
 		return "", fmt.Errorf("no workers available to select")
 	}
 	m.lastWorker = (m.lastWorker + 1) % len(m.Workers)
-	return m.Workers[m.lastWorker], nil
+	lastWorker := m.Workers[m.lastWorker]
+	m.mu.Unlock()
+
+	if m.IsWorkerHealthy(lastWorker){
+		return lastWorker, nil
+	}else{
+		healthyWorkers, err := m.GetHealthyWorkers()
+		if err != nil{
+			return "", err
+		}
+		m.mu.Lock()
+		chosenHealthyWorker := healthyWorkers[0]
+		for i, w := range m.Workers{
+			if w == chosenHealthyWorker{
+				m.lastWorker = i
+				break
+			}
+		}
+		m.mu.Unlock()
+		return healthyWorkers[0], nil
+	}
+}
+func (m *Manager) GetHealthyWorkers() ([]string, error){
+	//returns the healthy workers
+	m.mu.RLock()
+	healthyWorkers := []string{}
+	for _, w := range m.Workers{
+		if m.IsWorkerHealthy(w){
+			healthyWorkers = append(healthyWorkers, w)
+		}
+	}
+	if len(healthyWorkers) >0 {
+		log.Printf("Found %d healthy workers", len(healthyWorkers))
+		m.mu.RUnlock()
+		return healthyWorkers, nil
+	}
+	m.mu.RUnlock()
+	return nil, fmt.Errorf("no healthy workes exist")
 }
 func (m *Manager) UpdateTasks() {
-    for {
-        log.Println("Checking for task updates from workers")
-        m.updateTasks()
-        log.Println("Task updates completed")
-        log.Println("Sleeping for 15 seconds")
-        time.Sleep(15 * time.Second)
-    }
+	for {
+		log.Println("Checking for task updates from workers")
+		m.updateTasks()
+		log.Println("Task updates completed")
+		log.Println("Sleeping for 15 seconds")
+		time.Sleep(15 * time.Second)
+	}
 }
 func (m *Manager) ProcessTasks() {
-    for {
-        log.Println("Processing any tasks in the queue")
-        m.SendWork()
-        log.Println("Sleeping for 10 seconds")
-        time.Sleep(10 * time.Second)
-    }
+	for {
+		log.Println("Processing any tasks in the queue")
+		m.SendWork()
+		log.Println("Sleeping for 10 seconds")
+		time.Sleep(10 * time.Second)
+	}
 }
+
 // updates the status of tasks
 func (m *Manager) updateTasks() error {
 	//get the status of tasks in manager's queue from workers and update it.
@@ -225,19 +268,16 @@ func (m *Manager) updateTasks() error {
 	copy(workers, m.Workers)
 	m.mu.RUnlock()
 
-	log.Printf("Manager state: TaskDb=%d tasks, PendingTasks=%d", len(m.TaskDb),m.PendingTasks.Len())
-
+	log.Printf("Manager state: TaskDb=%d tasks, PendingTasks=%d", len(m.TaskDb), m.PendingTasks.Len())
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(workers))
 
 	for _, w := range workers {
-		wg.Add(1) 
+		wg.Add(1)
 		work := w
 		go func() {
 			defer wg.Done()
-
-			
 
 			url := fmt.Sprintf("http://%s/tasks?page=1&limit=1000", work)
 
@@ -249,10 +289,9 @@ func (m *Manager) updateTasks() error {
 			}
 			req.Header.Set("Authorization", "Bearer "+MANAGER_API_KEY)
 
-			
 			resp, err := httpClient.Do(req)
 			if err != nil {
-				log.Printf("Error receiving tasks for worker %s:%v\n",work,  err)
+				log.Printf("Error receiving tasks for worker %s:%v\n", work, err)
 				return
 			}
 			defer resp.Body.Close()
@@ -277,13 +316,12 @@ func (m *Manager) updateTasks() error {
 			}
 			log.Printf("Received %d tasks from worker %s", len(paginatedResp.Tasks), work)
 
-
 			m.mu.Lock()
 			updatedCount := 0
 			orphanedCount := 0
 			for i, workerTask := range paginatedResp.Tasks {
 				if i < 3 {
-					log.Printf("Task %d: ID=%s, State-%v, Name=%s",i,  workerTask.ID, workerTask.State, workerTask.Name)
+					log.Printf("Task %d: ID=%s, State-%v, Name=%s", i, workerTask.ID, workerTask.State, workerTask.Name)
 				}
 				// The logic from UpdateTaskState is now here, inside the lock.
 				log.Printf("Manager task State: %v, WorkerTask State: %v", m.TaskDb[workerTask.ID], workerTask.State)
@@ -296,48 +334,48 @@ func (m *Manager) updateTasks() error {
 						managerTask.StartTime = workerTask.StartTime
 						managerTask.EndTime = workerTask.EndTime
 					}
-				}else{
+				} else {
 
 					log.Printf("Task %s exists on worker %s but not in manager TaskDB", workerTask.ID, work)
 					log.Printf("Worker task state: %v, Manager TaskDb size: %d", workerTask.State, len(m.TaskDb))
-					 
-					log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb", 
-                        workerTask.ID, work)
-                    
+
+					log.Printf("ORPHANED TASK: %s exists on worker %s but not in manager TaskDb",
+						workerTask.ID, work)
+
 					// Create a copy of the worker task and add to manager state
 					taskCopy := *workerTask
 					m.TaskDb[workerTask.ID] = &taskCopy
 					m.TaskWorkerMap[workerTask.ID] = work
 
-					if m.SortedTasks == nil{
+					if m.SortedTasks == nil {
 						m.SortedTasks = make([]*task.Task, 0)
 					}
 					m.SortedTasks = m.InsertSorted(m.SortedTasks, &taskCopy)
 					log.Printf("Added orphaned task %s to Sorted Task list", &taskCopy.ID)
-					
+
 					// Add to worker's task list if not already there
 					found := false
 					for _, existingID := range m.WorkersTaskMap[work] {
-					if existingID == workerTask.ID {
-						found = true
-						break
-					}
+						if existingID == workerTask.ID {
+							found = true
+							break
+						}
 					}
 					if !found {
-					m.WorkersTaskMap[work] = append(m.WorkersTaskMap[work], workerTask.ID)
+						m.WorkersTaskMap[work] = append(m.WorkersTaskMap[work], workerTask.ID)
 					}
-					
+
 					orphanedCount++
 					log.Printf("Added orphaned task %s to manager state", workerTask.ID)
 				}
 
-				}
-		
+			}
+
 			m.mu.Unlock()
 			if updatedCount > 0 || orphanedCount > 0 {
-                log.Printf("Worker %s: updated %d tasks, recovered %d orphaned tasks", 
-                    work, updatedCount, orphanedCount)
-            }
+				log.Printf("Worker %s: updated %d tasks, recovered %d orphaned tasks",
+					work, updatedCount, orphanedCount)
+			}
 		}()
 	}
 	wg.Wait()
@@ -359,13 +397,12 @@ func (m *Manager) updateTasks() error {
 func (m *Manager) SendWork() {
 	log.Printf("Sending tasks to workers")
 	m.mu.Lock()
-	if m.PendingTasks.Len() == 0{
+	if m.PendingTasks.Len() == 0 {
 		m.mu.Unlock()
 		log.Printf("no pending tasks")
-		return 
+		return
 	}
-	
-	
+
 	e := m.PendingTasks.Dequeue()
 	m.mu.Unlock()
 	t, ok := e.(*task.Task)
@@ -375,9 +412,9 @@ func (m *Manager) SendWork() {
 	}
 
 	log.Printf("Pulled %v task off pending queue", t)
-	//if there's taks that are still pending. 
+	//if there's taks that are still pending.
 	//select worker to run task
-	w, error  := m.SelectWorker()
+	w, error := m.SelectWorker()
 	if error != nil {
 		log.Printf("No worker selected %s", error)
 		return
@@ -418,8 +455,6 @@ func (m *Manager) SendWork() {
 		m.AddTask(t)
 		return
 	}
-	
-
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -427,8 +462,7 @@ func (m *Manager) SendWork() {
 		m.AddTask(t)
 		return
 	}
-	defer resp.Body.Close()  //must always close resp body. 
-
+	defer resp.Body.Close() //must always close resp body.
 
 	d := json.NewDecoder(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
@@ -450,48 +484,48 @@ func (m *Manager) SendWork() {
 	m.TaskDb[t.ID] = t
 	log.Printf("Successfully added task %v to eventDB, and the task maps.", t.ID)
 	m.mu.Unlock()
-	
+
 }
 
 func (m *Manager) GetTasks() []*task.Task {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-    tasks := []*task.Task{}
-    for _, t := range m.TaskDb {
-        tasks = append(tasks, t)
-    }
-    taskCopy := tasks
-    return taskCopy
+	tasks := []*task.Task{}
+	for _, t := range m.TaskDb {
+		tasks = append(tasks, t)
+	}
+	taskCopy := tasks
+	return taskCopy
 }
-func (m *Manager) MarkWorkerDown(worker string){
+func (m *Manager) MarkWorkerDown(worker string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.WorkerHealth[worker] = false
-	log.Printf("worer %w marked as DOWN", worker)
+	log.Printf("worer %s marked as DOWN", worker)
 }
-func (m *Manager) MarkWorkerUp(worker string){
+func (m *Manager) MarkWorkerUp(worker string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.WorkerHealth[worker] = true
-	log.Printf("worer %w marked as UP", worker)
+	log.Printf("worer %s marked as UP", worker)
 }
-func (m *Manager) IsWorkerHealthy(worker string) bool{
+func (m *Manager) IsWorkerHealthy(worker string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.WorkerHealth[worker]
 }
-func (m *Manager) HealthCheckWorkers(){
-	for _, w := range m.Workers{
-		go func(worker string){
+func (m *Manager) HealthCheckWorkers() {
+	for _, w := range m.Workers {
+		go func(worker string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			url := fmt.Sprintf("http://%s/health", worker)
 			req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 			resp, err := httpClient.Do(req)
-			if err != nil{
+			if err != nil {
 				log.Printf("Worker %s is DOWN: %v ", worker, err)
 				m.MarkWorkerDown(worker)
-			}else {
+			} else {
 				resp.Body.Close()
 				log.Printf("Worker %s is UP", worker)
 				m.MarkWorkerUp(worker)
