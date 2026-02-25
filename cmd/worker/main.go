@@ -5,7 +5,7 @@ import (
 	workerhttp "minkube/internal/worker/http"
 	workerstats "minkube/internal/worker/stats"
 	"log"
-	"minkube/internal/task"
+	"minkube/task"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"

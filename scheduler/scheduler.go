@@ -1,7 +1,13 @@
 package scheduler
 
+import (
+	"minkube/node"
+	"minkube/task"
+
+)
+
 type Scheduler interface {
-	SelectCandidateNodes() //select nodes to run tasks
-	Score()                //rank the nodes selected.
-	Pick()                 //pick the nodes selected.
+	SelectCandidates(tasks []*task.Task, nodes []*node.Node ) []*node.Node //select nodes to run tasks
+	Score() map[*node.Node]float64         //rank the nodes selected.
+	Pick() *node.Node                //pick the nodes selected.
 }

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	manager"minkube/internal/manager"
-	"minkube/internal/task"
+	"minkube/task"
 
 	"github.com/docker/go-connections/nat"
 	"github.com/go-chi/chi/v5"

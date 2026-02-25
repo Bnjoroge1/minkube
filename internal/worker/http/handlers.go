@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"minkube/internal/task"
+	"minkube/task"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -107,7 +107,7 @@ func (a *Api) GetDockerTaskLogsHandler(w http.ResponseWriter, r *http.Request) {
 	errp := a.Worker.ProcessDockerStream(logResponse, func(logFormat task.DockerLogFormat) error {
 		logEntry, err := json.Marshal(logFormat)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not marshall log entry:  %w", err)
 		}
 		w.Write(logEntry)
 		w.Write([]byte("\n"))

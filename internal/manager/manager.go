@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"minkube/internal/task"
-	worker"minkube/internal/worker/service"
+	"minkube/task"
+	worker "minkube/internal/worker/service"
+	scheduler "minkube/scheduler"
 	"net"
 	"net/http"
 	"sort"
@@ -69,7 +70,7 @@ type errResponse struct {
 	HTTPStatusCode int    `json:"httpStatusCode"`
 	Message        string `json:"message"`
  }
-func New(workers []string) *Manager {
+func New(s scheduler.Scheduler, workers []string) *Manager {
 	taskDB := make(map[uuid.UUID]*task.Task)
 	eventDB := make(map[uuid.UUID]*task.TaskEvent)
 	workersTaskMap := make(map[string][]uuid.UUID)

@@ -1,15 +1,16 @@
 package main
 
-import ( 
+import (
+	"log"
 	"minkube/internal/manager"
 	managerhttp "minkube/internal/manager/http"
+	"minkube/scheduler/roundrobin"
 	"net/http"
-	"strings"
-	"time"
-	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 )
 	
 
@@ -21,7 +22,8 @@ func main(){
 		log.Fatal("MINKUBE_WORKERS environment variable not set (e.g., 'localhost:9001,localhost:9002')")
 	}
 	workers := strings.Split(workersStr, ",")
-	m := manager.New(workers)
+	s := &roundrobin.RoundRobin{}
+	m := manager.New(s, workers)
 
 	// The manager needs its own API to accept tasks from users.
 	managerApi := managerhttp.Api{

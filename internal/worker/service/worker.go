@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"minkube/internal/task"
+	"minkube/task"
 	workerstats "minkube/internal/worker/stats"
 	"strings"
 	"sync"
