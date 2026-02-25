@@ -1,14 +1,16 @@
-package worker
+package service
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
-	"minkube/task"
+	"minkube/internal/task"
+	workerstats "minkube/internal/worker/stats"
 	"strings"
 	"sync"
 	"time"
-	"encoding/binary"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/golang-collections/collections/queue"
@@ -21,10 +23,15 @@ type Worker struct {
 	TaskIds      map[uuid.UUID]*task.Task //stores the task ids which can be referenced in the manager by the ID
 	TaskCount    int
 	State        State
-	Stats        *Stats
+	Stats        *workerstats.Stats
 	DockerClient *client.Client
 	mu           sync.RWMutex
 }
+func (w *Worker) RLock() { w.mu.RLock()}
+func (w *Worker) RUnlock() { w.mu.RUnlock()}
+
+func (w *Worker) Lock() {w.mu.Lock()}
+func (w *Worker) Unlock() { w.mu.Unlock()}
 
 func (w *Worker) AddTask(t *task.Task) {
 	w.Queue.Enqueue(t)

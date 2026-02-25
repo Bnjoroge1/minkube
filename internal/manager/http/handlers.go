@@ -1,4 +1,4 @@
-package manager
+package http
 
 import (
 	"encoding/json"
@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"minkube/task"
+	manager"minkube/internal/manager"
+	"minkube/internal/task"
 
 	"github.com/docker/go-connections/nat"
 	"github.com/go-chi/chi/v5"
@@ -150,7 +151,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//set the header to json
-	a.Manager.mu.RLock()
+	a.Manager.RLock()
 	taskCount := len(a.Manager.SortedTasks)
 	start := (page - 1) * limit
 	end := min(start+limit, taskCount)
@@ -174,14 +175,14 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	//release lock from above manually to avoid slow clients affecting it. 
-	a.Manager.mu.RUnlock()
+	a.Manager.RUnlock()
 
 	totalPages := (taskCount + limit - 1) / limit
 	if totalPages == 0 {
 		totalPages = 1
 	}
 
-	pagination := PaginationMetadata{
+	pagination := manager.PaginationMetadata{
 		Page:       page,
 		Limit:      limit,
 		TotalTasks: taskCount,
@@ -190,7 +191,7 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		HasPrev:    page > 1,
 	}
 
-	response := PaginatedTaskResponse{
+	response := manager.PaginatedTaskResponse{
 		Tasks:              tasks,
 		PaginationMetadata: pagination,
 	}
@@ -221,23 +222,23 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		return 
 	}
-	a.Manager.mu.Lock()
+	a.Manager.Lock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
 		msg := fmt.Sprintf("Error parsing taskID: %v", err)
-		a.Manager.mu.Unlock()
+		a.Manager.Unlock()
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop, ok := a.Manager.TaskDb[tId]
 	if !ok {
 		msg := fmt.Sprintf("Task not found: %v", err)
-		a.Manager.mu.Unlock()
+		a.Manager.Unlock()
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop.State = task.Completed
-	a.Manager.mu.Unlock()
+	a.Manager.Unlock()
 	a.Manager.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
 

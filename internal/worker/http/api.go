@@ -1,4 +1,4 @@
-package worker
+package http
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"time"
+	worker "minkube/internal/worker/service"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -13,7 +14,7 @@ import (
 type Api struct {
 	Address string
 	Port    int64
-	Worker  *Worker
+	Worker  *worker.Worker
 	Router  *chi.Mux //Mux is basically a multiplexer or request router.
 }
 

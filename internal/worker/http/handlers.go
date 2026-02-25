@@ -1,4 +1,4 @@
-package worker
+package http
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"minkube/task"
+	"minkube/internal/task"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -143,13 +143,13 @@ func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a.Worker.mu.RLock()
+	a.Worker.RLock()
 	tasks := make([]*task.Task, 0, len(a.Worker.TaskIds))
 	for _, t := range a.Worker.TaskIds {
 		taskCopy := *t
 		tasks = append(tasks, &taskCopy)
 	}
-	a.Worker.mu.RUnlock()
+	a.Worker.RUnlock()
 	//get the pagination
 	totalTasks := len(tasks)
 	totalPages := (totalTasks + limit - 1) / limit
@@ -197,17 +197,17 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
-	a.Worker.mu.Lock()
+	a.Worker.Lock()
 	tId, err := uuid.Parse(taskID)
 	if err != nil {
-		a.Worker.mu.Unlock()
+		a.Worker.Unlock()
 		msg := fmt.Sprintf("COuld not parse id %s", taskID)
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	taskToStop, ok := a.Worker.TaskIds[tId]
 	if !ok {
-		a.Worker.mu.Unlock()
+		a.Worker.Unlock()
 		msg := fmt.Sprintf("Task with ID %s not found.\n", taskID)
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
@@ -216,22 +216,22 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 	
 	a.Worker.AddTask(taskToStop)
 	log.Printf("task stopped: %v", taskToStop)
-	a.Worker.mu.Unlock()
+	a.Worker.Unlock()
 	writeSuccessResponse(w, http.StatusOK, taskToStop)
 
 }
 
 func (a *Api) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
-	a.Worker.mu.RLock()
+	a.Worker.RLock()
 	//create a copy of stats
 	if a.Worker.Stats == nil{
-		a.Worker.mu.RUnlock()
+		a.Worker.RUnlock()
 		msg := "No stats to show"
 		writeErrorResponse(w, http.StatusBadRequest, msg)
 		return
 	}
 	statsCopy := *a.Worker.Stats
-	a.Worker.mu.RUnlock()
+	a.Worker.RUnlock()
 	writeSuccessResponse(w, http.StatusOK, statsCopy)
 }
 

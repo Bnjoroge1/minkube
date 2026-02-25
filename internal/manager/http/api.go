@@ -1,4 +1,4 @@
-package manager
+package http
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	manager "minkube/internal/manager"
 	"strings"
 	"time"
 
@@ -31,7 +32,7 @@ type APIKeyInfo struct {
 type Api struct {
 	Address   string
 	Port      int
-	Manager   *Manager
+	Manager   *manager.Manager
 	Router    *chi.Mux
 	APIConfig APIkeysConfig
 }

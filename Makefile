@@ -62,34 +62,36 @@ clean:
 # Run the application
 
 # Default port for worker
-WORKER_PORT ?= 8000
+WORKER_PORT ?= 8001
 WORKER_HOST ?= localhost
 
 # Run worker with configurable port
 .PHONY: run-worker
 run-worker:
-	MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) $(GOCMD) run ./cmd/worker
 
 # Convenience targets for multiple workers
 .PHONY: run-worker1 run-worker2 run-worker3
 run-worker1:
-	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8001  $(GOCMD) run ./cmd/worker
 
 run-worker2:
-	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8002  $(GOCMD) run ./cmd/worker
 
 run-worker3:
-	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8003  $(GOCMD) run ./cmd/worker
 
 # Run manager with single worker
 .PHONY: run-manager
 run-manager:
-	MINKUBE_HOST=localhost MINKUBE_PORT=8080 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8000 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8080 
+	MINKUBE_WORKERS=localhost:8000 $(GOCMD) run ./cmd/manager
 
 # Run manager with multiple workers
 .PHONY: run-manager-multi
 run-manager-multi:
-	MINKUBE_HOST=localhost MINKUBE_PORT=8080 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=8080
+	MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run ./cmd/manager
 
 # Open web UI in browser
 .PHONY: open-ui
@@ -110,11 +112,11 @@ start-dev: run-workers-dev
 # Run with custom environment
 .PHONY: run-dev
 run-dev:
-	MINKUBE_HOST=localhost MINKUBE_PORT=9000 $(GOCMD) run main.go
+	MINKUBE_HOST=localhost MINKUBE_PORT=9000 $(GOCMD) run ./cmd/manager
 
 .PHONY: run-prod
 run-prod:
-	MINKUBE_HOST=0.0.0.0 MINKUBE_PORT=8080 $(GOCMD) run main.go
+	MINKUBE_HOST=0.0.0.0 MINKUBE_PORT=8080 $(GOCMD) run ./cmd/manager
 
 # Development helpers
 .PHONY: fmt
@@ -214,9 +216,9 @@ help:
 run-workers-dev:
 	@echo "Starting workers on ports 8001, 8002, 8003 (Ctrl+C to stop all)..."
 	@trap 'kill 0' INT TERM; \
-	MINKUBE_HOST=localhost MINKUBE_PORT=8001 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
-	MINKUBE_HOST=localhost MINKUBE_PORT=8002 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
-	MINKUBE_HOST=localhost MINKUBE_PORT=8003 MINKUBE_ROLE=worker $(GOCMD) run main.go & \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8001  $(GOCMD) run ./cmd/worker & \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8002  $(GOCMD) run ./cmd/worker & \
+	MINKUBE_HOST=localhost MINKUBE_PORT=8003 $(GOCMD) run ./cmd/worker & \
 	wait
 
 # Stop background workers (fallback if workers were detached)
@@ -228,10 +230,10 @@ stop-workers:
 # Debug targets for troubleshooting
 .PHONY: debug-manager debug-worker debug-tasks
 debug-manager:
-	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_ROLE=manager MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run main.go
+	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=localhost MINKUBE_PORT=9000 MINKUBE_WORKERS=localhost:8001,localhost:8002,localhost:8003 $(GOCMD) run ./cmd/worker
 
 debug-worker:
-	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) MINKUBE_ROLE=worker $(GOCMD) run main.go
+	MINKUBE_DEBUG=true MINKUBE_LOG_LEVEL=debug MINKUBE_HOST=$(WORKER_HOST) MINKUBE_PORT=$(WORKER_PORT) $(GOCMD) run ./cmd/worker
 
 debug-tasks:
 	@echo "Checking task states and worker health..."

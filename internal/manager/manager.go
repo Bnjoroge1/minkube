@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"minkube/task"
-	"minkube/worker"
+	"minkube/internal/task"
+	worker"minkube/internal/worker/service"
 	"net"
 	"net/http"
 	"sort"
@@ -65,7 +65,10 @@ var httpClient = &http.Client{
 		},
 	},
 }
-
+type errResponse struct {
+	HTTPStatusCode int    `json:"httpStatusCode"`
+	Message        string `json:"message"`
+ }
 func New(workers []string) *Manager {
 	taskDB := make(map[uuid.UUID]*task.Task)
 	eventDB := make(map[uuid.UUID]*task.TaskEvent)
@@ -97,6 +100,13 @@ func New(workers []string) *Manager {
 	
 	return manager
 }
+
+func (m *Manager) RLock()   { m.mu.RLock() }
+func (m *Manager) RUnlock() { m.mu.RUnlock() }
+
+func (m *Manager) Lock()   { m.mu.Lock() }
+func (m *Manager) Unlock() { m.mu.Unlock() }
+
 
 // Get task from db
 func (m *Manager) GetTask(id uuid.UUID) (*task.Task, bool) {
@@ -335,7 +345,7 @@ func (m *Manager) updateTasks() error {
 			decoder := json.NewDecoder(resp.Body)
 			if resp.StatusCode != http.StatusOK {
 				log.Printf("Error: retrieved list from worker: %s. Received status code: %d", work, resp.StatusCode)
-				resp_err := worker.ErrResponse{}
+				resp_err := errResponse{}
 				dec_err := decoder.Decode(&resp_err)
 				if dec_err != nil {
 					log.Printf("Error decoding the error response: %s", resp_err.Message)
@@ -502,7 +512,7 @@ func (m *Manager) SendWork() {
 
 	d := json.NewDecoder(resp.Body)
 	if resp.StatusCode != http.StatusCreated {
-		e := worker.ErrResponse{}
+		e := errResponse{}
 		err := d.Decode(&e)
 		if err != nil {
 			fmt.Printf("Error decoding response: %s\n", e.Message)
@@ -557,10 +567,11 @@ func (m *Manager) IsWorkerHealthy(worker string) bool {
 	return m.WorkerHealth[worker]
 }
 func (m *Manager) HealthCheckWorkers() {
+	//i hit the workers health endpoint and set a timeout for about 5 seconds. this means that i have a range of about 15 seconds(5 seconds times 3 to confirm a worker is indeed unreachable.)
 	for _, w := range m.Workers {
 		go func(worker string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			defer cancel() 
 			url := fmt.Sprintf("http://%s/health", worker)
 			req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 			resp, err := httpClient.Do(req)
